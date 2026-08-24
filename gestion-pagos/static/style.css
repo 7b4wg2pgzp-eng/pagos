@@ -4,7 +4,7 @@
   --border: #262b36;
   --text: #e8eaed;
   --muted: #9aa1ac;
-  --accent: #3b82f6;
+  --accent: #d9a441;
   --ok: #22c55e;
   --pend: #f59e0b;
 }
@@ -72,7 +72,7 @@ button, .boton {
   border-radius: 8px;
   border: none;
   background: var(--accent);
-  color: white;
+  color: #241705;
   font-weight: 600;
   text-decoration: none;
   cursor: pointer;
@@ -103,3 +103,88 @@ dd { margin: 2px 0 0; font-size: 16px; }
 .ayuda { font-size: 13px; color: var(--muted); background: #0f1115; padding: 10px; border-radius: 8px; }
 
 a { color: var(--accent); }
+
+
+/* ---------------- Panel de gestión ---------------- */
+
+main { max-width: 980px; }
+
+.panel-top {
+  display: flex; flex-wrap: wrap; gap: 12px;
+  justify-content: space-between; align-items: center; margin-bottom: 20px;
+}
+.panel-top h1 { margin: 0; font-size: 24px; }
+.acciones-top { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.acciones-top form { margin: 0; }
+.acciones-top button, .acciones-top .boton { margin-top: 0; }
+
+.bloque { margin-bottom: 18px; padding: 16px 20px; }
+.bloque summary {
+  cursor: pointer; font-size: 14px; color: var(--muted);
+  list-style: none; padding: 2px 0;
+}
+.bloque summary::-webkit-details-marker { display: none; }
+.bloque summary::before { content: "▸ "; color: var(--accent); }
+.bloque[open] summary::before { content: "▾ "; }
+.bloque summary b { color: var(--text); }
+
+.grid-config {
+  display: grid; gap: 14px; margin-top: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+.grid-config label { margin: 0; }
+.grid-config small { display: block; margin-top: 4px; font-size: 12px; color: var(--muted); }
+.config-submit { display: flex; flex-direction: column; justify-content: flex-end; }
+.config-submit button { margin-top: 0; }
+.config-submit small { margin-top: 6px; font-size: 12px; color: var(--muted); }
+
+.titulo-seccion { font-size: 17px; margin: 28px 0 12px; display: flex; align-items: center; gap: 10px; }
+.conteo {
+  background: var(--border); color: var(--muted);
+  border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 500;
+}
+
+.plan { margin-bottom: 18px; padding: 18px 20px; }
+.plan-completo { opacity: .72; }
+.plan-cabecera {
+  display: flex; flex-wrap: wrap; gap: 10px;
+  justify-content: space-between; align-items: flex-start;
+}
+.plan-cabecera h3 { margin: 0 0 4px; font-size: 18px; }
+.plan-cabecera .meta { margin: 0; font-size: 13px; color: var(--muted); }
+.plan-cabecera code {
+  background: #0f1115; padding: 1px 6px; border-radius: 5px;
+  border: 1px solid var(--border); font-size: 12.5px;
+}
+.sin-usuario { color: var(--pend); }
+.plan-numeros { text-align: right; }
+.plan-numeros .progreso { margin: 0; font-weight: 600; font-size: 15px; }
+.plan-numeros .montos { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.tabla-cuotas { margin: 14px 0 10px; }
+.tabla-cuotas th, .tabla-cuotas td { padding: 9px 8px; }
+.tabla-cuotas .fila-pagada td { color: var(--muted); }
+.acciones-fila { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+.acciones-fila form { margin: 0; }
+.mini {
+  display: inline-block; margin: 0; padding: 5px 10px;
+  font-size: 12.5px; border-radius: 6px; font-weight: 500;
+  background: transparent; border: 1px solid var(--border);
+  color: var(--text); text-decoration: none; cursor: pointer;
+}
+.mini:hover { border-color: var(--accent); }
+
+.boton.peligro { background: transparent; border: 1px solid #7f2b2b; color: #ff9d9d; }
+.boton.peligro:hover { background: rgba(127, 43, 43, .18); }
+
+.form-editar label { margin: 16px 0 6px; }
+.form-editar small { display: block; margin-top: 5px; font-size: 12px; color: var(--muted); }
+.form-editar select {
+  width: 100%; padding: 10px 12px; border-radius: 8px;
+  border: 1px solid var(--border); background: #0f1115; color: var(--text); font-size: 15px;
+}
+.form-editar input { margin: 0; }
+
+.volver { margin: 0 0 16px; font-size: 14px; }
+.pie-datos { margin-top: 28px; font-size: 13px; color: var(--muted); }
+.card + .card { margin-top: 18px; }
