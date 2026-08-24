@@ -197,9 +197,11 @@ CONFIG_DEFECTO = {
     "cuota_minima": "50000",                # no se ofrecen cuotas por debajo de esto
     "max_cuotas": "8",                      # tope de cuotas del saldo
     "mp_checkout_activo": "0",              # 1 = ofrecer pago con Mercado Pago
-    "recargo_mp": "1.53",                   # % estimado para el 1er cobro, según el
-                                            # simulador de Mercado Pago con acreditación
-                                            # a 35 días (ya incluye IVA)
+    "recargo_mp": "1.86",                   # % estimado para el 1er cobro. El simulador
+                                            # de Mercado Pago muestra 1,53% a 35 días,
+                                            # pero ese número es SIN IVA: el cargo real
+                                            # es 1,53 x 1,21 = 1,8513%. Acá siempre se
+                                            # guarda la tasa efectiva, con IVA incluido.
     "recargo_auto": "1",                    # 1 = usar la comisión real ya medida
     "recargo_observado": "0",               # % medido en el último pago (lo escribe el webhook)
     "recargo_margen": "0.3",                # % extra de colchón sobre lo medido
