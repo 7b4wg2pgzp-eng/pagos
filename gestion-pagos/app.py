@@ -703,7 +703,12 @@ def api_pagar_cuota(cliente_id):
     raiz = request.url_root.rstrip("/")
     try:
         pref = mp.crear_preferencia(
-            titulo=f"{cuota['concepto'] or 'Cuota'} — {cuota['nombre']}",
+            # Mercado Pago se come la barra del título: "Cuota 1/6" le llega
+            # al cliente como "Cuota 16", que parece otra cuota.
+            titulo="{} — {}".format(
+                (cuota["concepto"] or "Cuota").replace("/", " de "),
+                cuota["nombre"],
+            ),
             monto=a_cobrar,
             referencia_externa=f"cuota:{cuota['id']}",
             url_vuelta=f"{raiz}/pago/vuelta",
