@@ -1,52 +1,146 @@
 {% extends "base.html" %}
-{% block title %}Panel{% endblock %}
+{% block title %}Panel de gestión{% endblock %}
 {% block content %}
 
-<div class="acciones">
-  <a class="boton" href="{{ url_for('nuevo_cliente') }}">+ Nuevo cliente</a>
-  <form method="post" action="{{ url_for('sincronizar') }}" style="display:inline">
-    <button type="submit" class="boton secundario">Sincronizar con Mercado Pago</button>
-  </form>
+<div class="panel-top">
+  <h1>Panel de gestión</h1>
+  <div class="acciones-top">
+    <form method="post" action="{{ url_for('sincronizar') }}">
+      <button type="submit" class="boton secundario">Sincronizar con Mercado Pago</button>
+    </form>
+    <a class="boton secundario" href="{{ url_for('nuevo_cliente') }}">Cobro suelto</a>
+  </div>
 </div>
 
-<p class="alias-info">Alias / CVU para que transfieran: <strong>{{ alias }}</strong></p>
+<!-- ---------------- Configuración de montos ---------------- -->
+<details class="card bloque">
+  <summary><b>Montos del presupuesto</b> — base {{ config.presupuesto_base|pesos(0) }} · financiado {{ config.presupuesto_financiado|pesos(0) }} · seña {{ config.sena|pesos(0) }}</summary>
+  <form method="post" action="{{ url_for('guardar_configuracion') }}" class="grid-config">
+    <label>Presupuesto base
+      <input type="text" name="presupuesto_base" value="{{ config.presupuesto_base }}" inputmode="numeric">
+      <small>Pago único y planes de 2 cuotas</small>
+    </label>
+    <label>Precio financiado
+      <input type="text" name="presupuesto_financiado" value="{{ config.presupuesto_financiado }}" inputmode="numeric">
+      <small>Total con 3 cuotas o más</small>
+    </label>
+    <label>Seña
+      <input type="text" name="sena" value="{{ config.sena }}" inputmode="numeric">
+      <small>Se paga al confirmar el plan</small>
+    </label>
+    <div class="config-submit">
+      <button type="submit" class="boton">Guardar montos</button>
+      <small>Afecta solo a los planes nuevos. Los ya creados no cambian.</small>
+    </div>
+  </form>
+</details>
 
-<h2>Pendientes ({{ pendientes|length }})</h2>
-{% if not pendientes %}
-  <p class="vacio">No hay pagos pendientes.</p>
-{% else %}
-<table>
-  <thead><tr><th>Cliente</th><th>Evento</th><th>Monto a transferir</th><th></th></tr></thead>
-  <tbody>
-    {% for c in pendientes %}
-    <tr>
-      <td>{{ c.nombre }}</td>
-      <td>{{ c.evento or '-' }}</td>
-      <td class="monto">${{ '%.2f'|format(c.monto_esperado) }}</td>
-      <td><a href="{{ url_for('detalle_cliente', cliente_id=c.id) }}">Ver</a></td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<!-- ---------------- Crear plan manual ---------------- -->
+<details class="card bloque">
+  <summary><b>Crear un plan a mano</b> — por si falla el flujo del cliente</summary>
+  <form method="post" action="{{ url_for('crear_plan_manual') }}" class="grid-config">
+    <label>Nombre del cliente
+      <input type="text" name="nombre" placeholder="Nombre y apellido">
+    </label>
+    <label>Fecha del evento
+      <input type="date" name="fecha_evento" min="{{ hoy }}">
+    </label>
+    <label>Cantidad de cuotas
+      <input type="number" name="cantidad_cuotas" min="1" max="12" value="4">
+      <small>Incluye la seña</small>
+    </label>
+    <div class="config-submit">
+      <button type="submit" class="boton">Crear plan</button>
+      <small>Se crea sin usuario. El cliente no va a poder entrar solo.</small>
+    </div>
+  </form>
+</details>
+
+<!-- ---------------- Planes ---------------- -->
+<h2 class="titulo-seccion">Planes de cuotas <span class="conteo">{{ planes|length }}</span></h2>
+
+{% if not planes %}
+  <p class="vacio">Todavía no hay planes cargados.</p>
 {% endif %}
 
-<h2>Pagados ({{ pagados|length }})</h2>
-{% if not pagados %}
-  <p class="vacio">Todavía no hay pagos confirmados.</p>
-{% else %}
-<table>
-  <thead><tr><th>Cliente</th><th>Evento</th><th>Monto</th><th>Fecha de pago</th></tr></thead>
-  <tbody>
-    {% for c in pagados %}
-    <tr class="pagado">
-      <td>{{ c.nombre }}</td>
-      <td>{{ c.evento or '-' }}</td>
-      <td class="monto">${{ '%.2f'|format(c.monto_esperado) }}</td>
-      <td>{{ c.fecha_pago[:16] if c.fecha_pago else '-' }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+{% for p in planes %}
+<div class="card plan {% if p.completo %}plan-completo{% endif %}">
+  <div class="plan-cabecera">
+    <div>
+      <h3>{{ p.nombre }}</h3>
+      <p class="meta">
+        {% if p.fecha_evento %}Evento: {{ p.fecha_evento }} · {% endif %}
+        {% if p.usuario %}usuario <code>{{ p.usuario }}</code>{% else %}<span class="sin-usuario">sin usuario</span>{% endif %}
+      </p>
+    </div>
+    <div class="plan-numeros">
+      <p class="progreso">{{ p.pagadas }}/{{ p.total_cuotas }} pagadas</p>
+      <p class="montos">${{ p.monto_cobrado|pesos }} de ${{ p.monto_total|pesos }}</p>
+    </div>
+  </div>
+
+  <table class="tabla-cuotas">
+    <thead>
+      <tr><th>Concepto</th><th>Vence</th><th>Monto exacto</th><th>Estado</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for c in p.cuotas %}
+      <tr class="{{ 'fila-pagada' if c.estado == 'pagado' else '' }}">
+        <td>{{ c.concepto or '-' }}</td>
+        <td>{{ c.fecha_vencimiento or '-' }}</td>
+        <td class="monto">${{ c.monto_esperado|pesos }}</td>
+        <td>
+          <span class="estado estado-{{ c.estado }}">{{ 'Pagada' if c.estado == 'pagado' else 'Pendiente' }}</span>
+        </td>
+        <td class="acciones-fila">
+          {% if c.estado == 'pendiente' %}
+          <form method="post" action="{{ url_for('marcar_pagado_manual', cliente_id=c.id) }}">
+            <button type="submit" class="mini">Marcar pagada</button>
+          </form>
+          {% endif %}
+          <a class="mini" href="{{ url_for('detalle_cliente', cliente_id=c.id) }}">Editar</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <form method="post" action="{{ url_for('eliminar_plan_admin', token=p.token) }}"
+        onsubmit="return confirm('¿Eliminar el plan completo de {{ p.nombre }}? Se borran sus {{ p.total_cuotas }} cuotas y su acceso. No se puede deshacer.');">
+    <button type="submit" class="boton peligro">Eliminar este plan</button>
+  </form>
+</div>
+{% endfor %}
+
+<!-- ---------------- Cobros sueltos ---------------- -->
+{% if sueltos %}
+<h2 class="titulo-seccion">Cobros sueltos <span class="conteo">{{ sueltos|length }}</span></h2>
+<div class="card">
+  <table class="tabla-cuotas">
+    <thead>
+      <tr><th>Cliente</th><th>Monto exacto</th><th>Estado</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for c in sueltos %}
+      <tr class="{{ 'fila-pagada' if c.estado == 'pagado' else '' }}">
+        <td>{{ c.nombre }}{% if c.evento %} <small>· {{ c.evento }}</small>{% endif %}</td>
+        <td class="monto">${{ c.monto_esperado|pesos }}</td>
+        <td><span class="estado estado-{{ c.estado }}">{{ 'Pagado' if c.estado == 'pagado' else 'Pendiente' }}</span></td>
+        <td class="acciones-fila">
+          {% if c.estado == 'pendiente' %}
+          <form method="post" action="{{ url_for('marcar_pagado_manual', cliente_id=c.id) }}">
+            <button type="submit" class="mini">Marcar pagado</button>
+          </form>
+          {% endif %}
+          <a class="mini" href="{{ url_for('detalle_cliente', cliente_id=c.id) }}">Editar</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endif %}
+
+<p class="pie-datos">Cobrás en <b>{{ alias }}</b>{% if cvu %} · CVU <b>{{ cvu }}</b>{% endif %}</p>
 
 {% endblock %}
