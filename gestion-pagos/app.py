@@ -182,14 +182,28 @@ def dashboard():
 @login_requerido
 def guardar_configuracion():
     nuevos = {}
-    for clave in ("presupuesto_base", "presupuesto_financiado", "sena"):
+    for clave in ("presupuesto_base", "presupuesto_financiado",
+                  "presupuesto_financiado_largo", "cuotas_tramo_largo",
+                  "sena", "cuota_minima", "max_cuotas"):
         valor = _monto(request.form.get(clave, ""), None)
         if valor is None or valor <= 0:
             flash(f"El valor de {clave.replace('_', ' ')} no es válido")
             return redirect(url_for("dashboard"))
         nuevos[clave] = valor
     if nuevos["sena"] >= nuevos["presupuesto_base"]:
-        flash("La seña tiene que ser menor al presupuesto base")
+        flash("La seña tiene que ser menor al precio de contado")
+        return redirect(url_for("dashboard"))
+    if nuevos["presupuesto_financiado"] < nuevos["presupuesto_base"]:
+        flash("El precio financiado no puede ser menor al de contado")
+        return redirect(url_for("dashboard"))
+    if nuevos["presupuesto_financiado_largo"] < nuevos["presupuesto_financiado"]:
+        flash("El precio del tramo largo no puede ser menor al financiado")
+        return redirect(url_for("dashboard"))
+    if nuevos["cuotas_tramo_largo"] < 2:
+        flash("El tramo largo tiene que arrancar en la cuota 2 o más")
+        return redirect(url_for("dashboard"))
+    if nuevos["max_cuotas"] > 24:
+        flash("El tope de cuotas no puede ser mayor a 24")
         return redirect(url_for("dashboard"))
     db.guardar_config(nuevos)
     flash("Montos actualizados. Los planes nuevos ya usan estos valores.")
@@ -203,7 +217,7 @@ def crear_plan_manual():
     nombre = request.form.get("nombre", "").strip() or "Sin nombre"
     fecha_evento = _parsear_fecha(request.form.get("fecha_evento", ""))
     try:
-        cantidad = int(request.form.get("cantidad_cuotas", "0"))
+        cantidad = int(request.form.get("cuotas_saldo", request.form.get("cantidad_cuotas", "0")))
     except ValueError:
         cantidad = 0
 
@@ -342,8 +356,9 @@ def calculadora_cuotas_legacy():
 
 @app.route("/api/planes/opciones", methods=["POST"])
 def api_opciones_plan():
-    """Simulación (no escribe nada): dada una fecha de evento, devuelve
-    todas las cantidades de cuotas posibles con su desglose calculado."""
+    """Simulación (no escribe nada): para una fecha de evento devuelve el
+    precio, la seña, la fecha límite de pago y todas las alternativas de
+    cuotas del saldo que entran en el tiempo disponible."""
     body = request.get_json(silent=True) or {}
     fecha_evento = _parsear_fecha(body.get("fecha_evento", ""))
     if not fecha_evento:
@@ -351,25 +366,23 @@ def api_opciones_plan():
     if fecha_evento < date.today():
         return jsonify({"error": "Esa fecha ya pasó"}), 400
 
-    max_cuotas = planes.cuotas_maximas_disponibles(fecha_evento)
-    opciones = []
-    for n in range(1, max_cuotas + 1):
-        plan = planes.calcular_plan(fecha_evento, n)
-        opciones.append(
-            {
-                "cantidad_cuotas": n,
-                "total": sum(c["monto"] for c in plan),
-                "cuotas": [
-                    {
-                        "concepto": c["concepto"],
-                        "monto": c["monto"],
-                        "fecha_vencimiento": c["fecha_vencimiento"].isoformat(),
-                    }
-                    for c in plan
-                ],
-            }
-        )
-    return jsonify({"max_cuotas": max_cuotas, "opciones": opciones})
+    conf = db.leer_config()
+    validas = planes.cuotas_disponibles(fecha_evento)
+    opciones = [planes.resumen_opcion(fecha_evento, n) for n in validas]
+
+    return jsonify(
+        {
+            "precio_contado": conf["presupuesto_base"],
+            "precio_financiado": conf["presupuesto_financiado"],
+            "precio_financiado_largo": conf["presupuesto_financiado_largo"],
+            "sena": conf["sena"],
+            "cuota_minima": conf["cuota_minima"],
+            "limite_pago": planes.limite_pago(fecha_evento).isoformat(),
+            "max_cuotas": max(validas),
+            "hay_financiacion": len(validas) > 1,
+            "opciones": opciones,
+        }
+    )
 
 
 @app.route("/api/planes", methods=["POST"])
@@ -383,7 +396,7 @@ def api_crear_plan():
     clave = body.get("clave") or ""
     fecha_evento = _parsear_fecha(body.get("fecha_evento", ""))
     try:
-        cantidad_cuotas = int(body.get("cantidad_cuotas"))
+        cuotas_saldo = int(body.get("cuotas_saldo", body.get("cantidad_cuotas")))
     except (TypeError, ValueError):
         return jsonify({"error": "Elegí en cuántas cuotas querés pagar"}), 400
 
@@ -400,13 +413,25 @@ def api_crear_plan():
     if db.usuario_existe(usuario):
         return jsonify({"error": "Ese usuario ya está en uso, probá con otro"}), 409
 
-    max_cuotas = planes.cuotas_maximas_disponibles(fecha_evento)
-    if cantidad_cuotas < 1 or cantidad_cuotas > max_cuotas:
-        return jsonify({"error": f"Para esa fecha el máximo es {max_cuotas} cuotas"}), 400
+    validas = planes.cuotas_disponibles(fecha_evento)
+    if cuotas_saldo not in validas:
+        return jsonify(
+            {"error": f"Para esa fecha el máximo es {max(validas)} cuota(s)"}
+        ), 400
 
     # Los montos se calculan acá, en el servidor, a partir de la fecha y la
     # cantidad de cuotas — nunca se confía en un monto mandado por el cliente.
-    cuotas_calc = planes.calcular_plan(fecha_evento, cantidad_cuotas)
+    cuotas_calc = planes.calcular_plan(fecha_evento, cuotas_saldo)
+
+    # Red de seguridad: ninguna cuota del saldo puede quedar por debajo del
+    # mínimo, ni vencer después de la fecha límite.
+    conf = db.leer_config()
+    limite = planes.limite_pago(fecha_evento)
+    for c in cuotas_calc[1:]:
+        if c["monto"] < conf["cuota_minima"]:
+            return jsonify({"error": "Esa cantidad de cuotas da un monto por debajo del mínimo"}), 400
+        if c["fecha_vencimiento"] > max(limite, date.today()):
+            return jsonify({"error": "Esa cantidad de cuotas no entra antes de la fecha límite"}), 400
     plan_token, _ = db.crear_plan(
         nombre=nombre or usuario,
         telefono="",
@@ -420,7 +445,7 @@ def api_crear_plan():
         usuario,
         generate_password_hash(clave),
         fecha_evento.isoformat(),
-        cantidad_cuotas,
+        cuotas_saldo,
     )
     session["plan_token"] = plan_token
     return jsonify(_respuesta_plan(plan_token))

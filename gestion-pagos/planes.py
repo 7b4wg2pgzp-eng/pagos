@@ -1,31 +1,61 @@
-"""Lógica de cálculo del plan de cuotas para eventos.
+"""Cálculo del plan de pago de un evento.
 
-Reglas de negocio:
-- Presupuesto base: $500.000. Seña: $250.000 (se paga siempre "hoy").
-- 1 cuota (pago único): $500.000, todo hoy, sin seña separada.
-- 2 cuotas: seña ($250.000) + 1 cuota de $250.000, vence 1 mes antes del evento.
-- 3 o más cuotas: el total sube a $550.000 (recargo por financiar). Se resta la
-  seña ($250.000) y el resto ($300.000) se reparte en partes iguales entre las
-  cuotas restantes, la última cuota vence exactamente 1 mes antes del evento y
-  las anteriores van hacia atrás, una por mes.
+Reglas del negocio
+------------------
+- Precio de contado: $500.000. Seña: $250.000, SIEMPRE, y nunca se divide.
+- La seña se abona al confirmar el plan (hoy) y no cuenta como cuota.
+- Saldo en 1 pago   -> precio total $500.000, saldo $250.000.
+- Saldo en 2 a 5    -> precio total $550.000, saldo financiado $300.000.
+- Saldo en 6 o más  -> segundo tramo de financiación, precio total $600.000,
+  saldo financiado $350.000. Así la cuota larga no queda tan chica.
+  (el saldo financiado NUNCA es 250.000: el precio total sube)
+- Cuota mínima: $50.000. Tope: 8 cuotas.
+- El saldo tiene que quedar cancelado como máximo 1 mes antes del evento:
+  la última cuota vence exactamente en esa fecha límite y las anteriores
+  van hacia atrás, una por mes.
+- La cantidad de cuotas ofrecidas depende del tiempo que haya entre hoy y
+  la fecha límite; nunca se ofrece una cuota que venza después del límite.
+
+En este módulo "cuotas" siempre significa cuotas DEL SALDO (sin la seña):
+cuotas_saldo = 1 es la opción de contado.
 """
 from datetime import date
 import calendar
 
 import db
 
-# Valores por defecto. Los reales se leen de la tabla `config`, editable
-# desde el panel de gestión (db.leer_config()).
+# Valores por defecto; los vigentes se leen de la tabla `config`, editable
+# desde el panel de gestión.
 PRESUPUESTO_BASE = 500_000
 PRESUPUESTO_FINANCIADO = 550_000
+PRESUPUESTO_FINANCIADO_LARGO = 600_000
+CUOTAS_TRAMO_LARGO = 6
 SENA = 250_000
-MAX_CUOTAS = 12
+CUOTA_MINIMA = 50_000
+MAX_CUOTAS = 8
 
 
 def montos():
-    """Lee los montos vigentes desde la configuración guardada."""
-    c = db.leer_config()
-    return c["presupuesto_base"], c["presupuesto_financiado"], c["sena"]
+    """Configuración vigente de precios y financiación."""
+    return db.leer_config()
+
+
+def precio_total(n, conf=None):
+    """Precio final según en cuántas cuotas se abone el saldo."""
+    c = conf or montos()
+    if n <= 1:
+        return c["presupuesto_base"]
+    if n < c["cuotas_tramo_largo"]:
+        return c["presupuesto_financiado"]
+    return c["presupuesto_financiado_largo"]
+
+
+def tramo(n, conf=None):
+    """Etiqueta del tramo de precio: 'contado', 'financiado' o 'financiado_largo'."""
+    c = conf or montos()
+    if n <= 1:
+        return "contado"
+    return "financiado" if n < c["cuotas_tramo_largo"] else "financiado_largo"
 
 
 def restar_meses(fecha, n):
@@ -34,69 +64,108 @@ def restar_meses(fecha, n):
     anio = fecha.year + mes_total // 12
     mes = mes_total % 12 + 1
     ultimo_dia = calendar.monthrange(anio, mes)[1]
-    dia = min(fecha.day, ultimo_dia)
-    return date(anio, mes, dia)
+    return date(anio, mes, min(fecha.day, ultimo_dia))
 
 
 def meses_entre(a, b):
-    """Cantidad de meses completos desde a hasta b (b >= a), contando por
-    diferencia de mes/año, sin importar el día."""
+    """Meses de calendario desde a hasta b, sin mirar el día."""
     return (b.year - a.year) * 12 + (b.month - a.month)
 
 
-def cuotas_maximas_disponibles(fecha_evento, hoy=None):
-    """Cuántas cuotas mensuales (además de la seña) entran entre hoy y un mes
-    antes del evento. Devuelve la cantidad total de cuotas (incluyendo la
-    seña) permitida, con un piso de 1 (pago único) y techo MAX_CUOTAS.
+def limite_pago(fecha_evento):
+    """Fecha límite para tener el saldo cancelado: 1 mes antes del evento."""
+    return restar_meses(fecha_evento, 1)
 
-    Se calcula probando de mayor a menor: la primera cuota (la más antigua)
-    tiene que caer hoy o después, nunca en el pasado. Usar solo la resta de
-    meses de calendario (sin mirar el día) podía dar una primera cuota ya
-    vencida cuando el día del evento es menor al día de hoy."""
+
+def cuotas_disponibles(fecha_evento, hoy=None):
+    """Lista de cantidades de cuotas del saldo ofrecibles para esa fecha.
+
+    Siempre incluye el 1 (contado, disponible aunque el evento sea mañana).
+    Para financiar en n cuotas hacen falta n huecos mensuales entre hoy y el
+    límite: con la última cuota en el límite, la primera cae n-1 meses antes
+    y tiene que quedar después de hoy (la seña ya se paga hoy). Eso da
+    n <= meses_entre(hoy, limite).
+
+    Se evalúa n por n en vez de calcular un único techo, porque el saldo
+    cambia de tramo (y por lo tanto el valor de la cuota también) al llegar
+    a `cuotas_tramo_largo`.
+    """
     hoy = hoy or date.today()
-    limite = restar_meses(fecha_evento, 1)
-    if limite < hoy:
-        return 1
-    for n in range(MAX_CUOTAS - 1, 0, -1):  # n = cuotas sin contar la seña
-        primera = restar_meses(limite, n - 1)
-        if primera >= hoy:
-            return min(MAX_CUOTAS, n + 1)
-    return 1
+    conf = montos()
+    sena, cuota_min, tope = conf["sena"], conf["cuota_minima"], conf["max_cuotas"]
+    por_tiempo = meses_entre(hoy, limite_pago(fecha_evento))
+
+    validas = [1]
+    for n in range(2, tope + 1):
+        if n > por_tiempo:
+            continue
+        saldo = precio_total(n, conf) - sena
+        if cuota_min > 0 and saldo / n < cuota_min:
+            continue
+        validas.append(n)
+    return validas
 
 
-def calcular_plan(fecha_evento, cantidad_cuotas, hoy=None):
-    """Devuelve la lista de cuotas: [{concepto, monto, fecha_vencimiento}, ...]
-    fecha_vencimiento como date. monto en pesos, redondeado, ajustando la
-    última cuota para que la suma cierre exacta."""
+def calcular_plan(fecha_evento, cuotas_saldo, hoy=None):
+    """Plan completo: [{concepto, monto, fecha_vencimiento}, ...].
+
+    `cuotas_saldo` son las cuotas del SALDO, sin contar la seña:
+      1  -> contado  (seña + 1 pago del saldo, total $500.000)
+      2+ -> financiado (seña + n cuotas, total $550.000)
+
+    El primer ítem siempre es la seña, con vencimiento hoy.
+    """
     hoy = hoy or date.today()
-    cantidad_cuotas = int(cantidad_cuotas)
+    n = max(1, int(cuotas_saldo))
 
-    base, financiado, sena = montos()
+    conf = montos()
+    sena = conf["sena"]
+    total = precio_total(n, conf)
+    saldo = total - sena
 
-    if cantidad_cuotas <= 1:
-        return [
-            {"concepto": "Pago único", "monto": base, "fecha_vencimiento": hoy}
-        ]
+    limite = limite_pago(fecha_evento)
 
-    total = base if cantidad_cuotas == 2 else financiado
-    resto = total - sena
-    n_cuotas = cantidad_cuotas - 1  # sin contar la seña
+    if n == 1:
+        # Un solo pago del saldo. Si el evento está tan cerca que el límite ya
+        # pasó, el saldo se abona hoy junto con la seña.
+        fechas = [max(limite, hoy)]
+    else:
+        fechas = [restar_meses(limite, n - 1 - i) for i in range(n)]
 
-    limite = restar_meses(fecha_evento, 1)
-    fechas = [restar_meses(limite, n_cuotas - 1 - i) for i in range(n_cuotas)]
-
-    monto_cada_una = round(resto / n_cuotas)
-    montos_cuotas = [monto_cada_una] * n_cuotas
-    diferencia = resto - sum(montos_cuotas)
-    montos_cuotas[-1] += diferencia
+    base = round(saldo / n)
+    montos_cuotas = [base] * n
+    montos_cuotas[-1] += saldo - sum(montos_cuotas)  # la última absorbe el redondeo
 
     plan = [{"concepto": "Seña", "monto": sena, "fecha_vencimiento": hoy}]
     for i, (fecha, monto) in enumerate(zip(fechas, montos_cuotas), start=1):
-        plan.append(
-            {
-                "concepto": f"Cuota {i}/{n_cuotas}",
-                "monto": monto,
-                "fecha_vencimiento": fecha,
-            }
-        )
+        concepto = "Saldo" if n == 1 else "Cuota {}/{}".format(i, n)
+        plan.append({"concepto": concepto, "monto": monto, "fecha_vencimiento": fecha})
     return plan
+
+
+def resumen_opcion(fecha_evento, cuotas_saldo, hoy=None):
+    """Datos de una opción, listos para mostrar en la calculadora."""
+    plan = calcular_plan(fecha_evento, cuotas_saldo, hoy)
+    sena = plan[0]["monto"]
+    cuotas = plan[1:]
+    total = sena + sum(c["monto"] for c in cuotas)
+    montos_cuotas = [c["monto"] for c in cuotas]
+    return {
+        "cuotas_saldo": len(cuotas),
+        "financiado": len(cuotas) > 1,
+        "tramo": tramo(len(cuotas)),
+        "sena": sena,
+        "saldo": total - sena,
+        "monto_cuota": montos_cuotas[0],
+        "ultima_cuota": montos_cuotas[-1],
+        "cuotas_iguales": len(set(montos_cuotas)) == 1,
+        "total": total,
+        "cuotas": [
+            {
+                "concepto": c["concepto"],
+                "monto": c["monto"],
+                "fecha_vencimiento": c["fecha_vencimiento"].isoformat(),
+            }
+            for c in plan
+        ],
+    }

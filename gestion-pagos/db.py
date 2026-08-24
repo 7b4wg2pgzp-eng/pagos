@@ -165,9 +165,13 @@ def init_db():
 # --------------------------------------------------------------------------
 
 CONFIG_DEFECTO = {
-    "presupuesto_base": "500000",
-    "presupuesto_financiado": "550000",
-    "sena": "250000",
+    "presupuesto_base": "500000",           # contado: saldo en 1 pago
+    "presupuesto_financiado": "550000",     # tramo 1: de 2 cuotas hasta el tramo largo
+    "presupuesto_financiado_largo": "600000",  # tramo 2: desde cuotas_tramo_largo
+    "cuotas_tramo_largo": "6",              # cuota a partir de la cual rige el 2do precio
+    "sena": "250000",                       # fija, nunca se divide
+    "cuota_minima": "50000",                # no se ofrecen cuotas por debajo de esto
+    "max_cuotas": "8",                      # tope de cuotas del saldo
 }
 
 

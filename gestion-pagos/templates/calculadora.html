@@ -132,10 +132,63 @@
     border-color:var(--gold);
     background:linear-gradient(180deg, rgba(217,164,65,.14), rgba(217,164,65,.04));
   }
-  .opcion-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;}
-  .opcion-titulo{font-weight:700;font-size:15.5px;}
-  .opcion-total{font-family:'Barlow Condensed',sans-serif;font-weight:600;color:var(--gold-lit);font-size:15px;}
-  .opcion-detalle{margin-top:8px;font-size:13px;color:rgba(244,239,228,.62);display:none;}
+  .opcion-top{display:flex;justify-content:space-between;align-items:center;gap:10px;}
+  .opcion-titulo{font-weight:700;font-size:16px;}
+  .opcion-precio{text-align:right;white-space:nowrap;}
+  .opcion-precio .valor{
+    display:block;font-family:'Barlow Condensed',sans-serif;font-weight:600;
+    color:var(--gold-lit);font-size:23px;line-height:1.1;
+  }
+  .opcion-precio .unidad{
+    display:block;font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
+    letter-spacing:.09em;font-size:10.5px;color:rgba(244,239,228,.45);margin-top:2px;
+  }
+  .opcion-linea{margin-top:5px;font-size:13px;color:rgba(244,239,228,.6);}
+  .opcion-final{
+    margin-top:6px;font-size:14px;color:var(--bone);font-weight:700;
+  }
+  .opcion-final span{color:var(--gold-lit);}
+
+  /* Precio del servicio y seña, fijos arriba */
+  .precio-box{
+    border:1px solid rgba(217,164,65,.38);border-radius:16px;
+    background:linear-gradient(180deg, rgba(217,164,65,.14), rgba(217,164,65,.04));
+    padding:14px 16px;margin-bottom:12px;
+  }
+  .precio-fila{
+    display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+    padding:5px 0;
+  }
+  .precio-fila + .precio-fila{border-top:1px dashed rgba(217,164,65,.2);}
+  .precio-label{
+    font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
+    letter-spacing:.1em;font-size:13px;color:var(--gold-lit);font-weight:600;
+  }
+  .precio-valor{
+    font-family:'Barlow Condensed',sans-serif;font-weight:600;
+    color:var(--gold-lit);font-size:22px;white-space:nowrap;
+  }
+  .precio-nota{margin:8px 0 0;font-size:12.5px;color:rgba(244,239,228,.55);line-height:1.4;}
+
+  /* Fecha límite de pago */
+  .limite-box{
+    border:1px solid var(--line);border-radius:14px;
+    background:rgba(0,0,0,.28);padding:12px 16px;margin-bottom:18px;
+  }
+  .limite-label{
+    margin:0;font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
+    letter-spacing:.1em;font-size:11.5px;color:rgba(244,239,228,.5);
+  }
+  .limite-fecha{margin:3px 0 0;font-size:16px;font-weight:700;color:var(--bone);}
+  .limite-nota{margin:5px 0 0;font-size:12.5px;color:rgba(244,239,228,.5);line-height:1.4;}
+  .sub-opciones{
+    margin:0 0 10px;font-size:13px;color:rgba(244,239,228,.6);
+  }
+  .aviso{
+    border:1px solid var(--line);border-radius:14px;padding:14px 16px;
+    background:rgba(0,0,0,.25);font-size:14px;color:rgba(244,239,228,.75);line-height:1.5;
+  }
+  .opcion-detalle{margin-top:10px;padding-top:8px;border-top:1px solid var(--line);font-size:13px;color:rgba(244,239,228,.62);display:none;}
   .opcion.selected .opcion-detalle{display:block;}
   .opcion-detalle .fila{display:flex;justify-content:space-between;padding:3px 0;border-top:1px dashed rgba(217,164,65,.15);}
   .opcion-detalle .fila:first-child{border-top:none;}
@@ -143,6 +196,14 @@
     display:inline-block;margin-top:6px;font-size:11.5px;color:var(--gold-lit);
     background:rgba(217,164,65,.12);border:1px solid var(--line);
     border-radius:100px;padding:2px 10px;
+  }
+  .opcion-recargo.sin-interes{
+    color:var(--ok);background:rgba(143,209,158,.12);
+    border-color:rgba(143,209,158,.35);
+  }
+  .opcion-recargo.largo{
+    color:#f0c07a;background:rgba(217,164,65,.2);
+    border-color:rgba(217,164,65,.45);
   }
 
   .resumen-elegido{
@@ -247,10 +308,30 @@
     </p>
   </section>
 
-  <!-- PASO 2: elegir cuotas -->
+  <!-- PASO 2: elegir cómo pagar -->
   <section id="paso-opciones" class="card oculto">
     <p class="eyebrow">Paso 2</p>
     <h2>Elegí cómo pagar</h2>
+
+    <div class="precio-box">
+      <div class="precio-fila">
+        <span class="precio-label">Precio del servicio</span>
+        <span class="precio-valor" id="precio-servicio"></span>
+      </div>
+      <div class="precio-fila">
+        <span class="precio-label">Seña</span>
+        <span class="precio-valor" id="precio-sena"></span>
+      </div>
+      <p class="precio-nota">La seña es fija y se abona al confirmar el plan, para reservar la fecha.</p>
+    </div>
+
+    <div class="limite-box">
+      <p class="limite-label">Fecha límite para completar el pago</p>
+      <p class="limite-fecha" id="limite-fecha"></p>
+      <p class="limite-nota">Tu saldo debe estar completamente cancelado 1 mes antes del evento.</p>
+    </div>
+
+    <p class="sub-opciones" id="sub-opciones">Elegí en cuántos pagos abonás el saldo:</p>
     <div class="opciones" id="lista-opciones"></div>
     <button class="btn btn-primary" id="btn-continuar" disabled>Continuar</button>
   </section>
@@ -324,7 +405,7 @@
 
   var elFecha=$("in-fecha"), elNombre=$("in-nombre"), elUsuario=$("in-usuario"),
       elClave=$("in-clave"), elClave2=$("in-clave2");
-  var seleccion=null, opcionesCache=[], pollTimer=null, planActual=null;
+  var seleccion=null, datos=null, pollTimer=null, planActual=null;
 
   elFecha.setAttribute("min", new Date().toISOString().slice(0,10));
 
@@ -392,6 +473,16 @@
     return fila;
   }
 
+  function limpiarSeleccion(){
+    document.querySelectorAll(".opcion.selected").forEach(function(o){
+      o.classList.remove("selected");
+    });
+  }
+
+  function tituloOpcion(op){
+    return op.cuotas_saldo === 1 ? "1 pago" : (op.cuotas_saldo + " cuotas");
+  }
+
   // ---------- paso 1: fecha -> opciones ----------
   function pedirOpciones(){
     err($("err-datos"), "");
@@ -401,35 +492,73 @@
       body: JSON.stringify({fecha_evento: elFecha.value})
     }).then(function(res){
       if(!res.ok){ mostrar("paso-datos"); err($("err-datos"), res.data.error || "No se pudo calcular el plan."); return; }
-      opcionesCache = res.data.opciones;
-      renderOpciones(opcionesCache);
+      datos = res.data;
+      renderOpciones(datos);
       mostrar("paso-datos","paso-opciones");
     }).catch(function(){
       err($("err-datos"), "No se pudo conectar. Probá de nuevo.");
     });
   }
 
-  function renderOpciones(opciones){
+  function renderOpciones(d){
     var cont = $("lista-opciones");
     cont.innerHTML = "";
     seleccion = null;
     $("btn-continuar").disabled = true;
 
-    opciones.forEach(function(op){
+    $("precio-servicio").textContent = montoRedondo(d.precio_contado);
+    $("precio-sena").textContent = montoRedondo(d.sena);
+    $("limite-fecha").textContent = fechaLegible(d.limite_pago);
+
+    $("sub-opciones").textContent = d.hay_financiacion
+      ? "Elegí en cuántos pagos abonás el saldo:"
+      : "Para esta fecha solo entra el pago del saldo en un pago:";
+
+    d.opciones.forEach(function(op){
       var div = document.createElement("div");
       div.className = "opcion";
-      var titulo = op.cantidad_cuotas === 1 ? "Pago único" : (op.cantidad_cuotas + " cuotas");
-      var recargo = (op.cuotas.length > 2) ? '<span class="opcion-recargo">Incluye financiación</span>' : "";
-      var detalle = op.cuotas.map(function(c){
-        return '<div class="fila"><span>' + c.concepto + ' · ' + fechaLegible(c.fecha_vencimiento) +
-               '</span><span>' + montoRedondo(c.monto) + '</span></div>';
+
+      var lineas = "";
+      if(op.financiado){
+        lineas += '<div class="opcion-linea">Saldo financiado: <b>' +
+                  montoRedondo(op.saldo) + '</b> · ' + op.cuotas_saldo +
+                  ' cuotas de <b>' + montoRedondo(op.monto_cuota) + '</b></div>';
+        if(!op.cuotas_iguales){
+          lineas += '<div class="opcion-linea">La última cuota es de ' +
+                    montoRedondo(op.ultima_cuota) + '</div>';
+        }
+      } else {
+        lineas += '<div class="opcion-linea">Saldo: <b>' + montoRedondo(op.saldo) +
+                  '</b> en un solo pago</div>';
+      }
+
+      var sello;
+      if(op.tramo === "contado"){
+        sello = '<span class="opcion-recargo sin-interes">Sin recargo</span>';
+      } else if(op.tramo === "financiado_largo"){
+        sello = '<span class="opcion-recargo largo">Financiación extendida</span>';
+      } else {
+        sello = '<span class="opcion-recargo">Precio financiado</span>';
+      }
+
+      var detalle = op.cuotas.map(function(x){
+        return '<div class="fila"><span>' + x.concepto + ' · ' + fechaLegible(x.fecha_vencimiento) +
+               '</span><span>' + montoRedondo(x.monto) + '</span></div>';
       }).join("");
+
       div.innerHTML =
-        '<div class="opcion-top"><span class="opcion-titulo">' + titulo +
-        '</span><span class="opcion-total">' + montoRedondo(op.total) + '</span></div>' +
-        recargo + '<div class="opcion-detalle">' + detalle + '</div>';
+        '<div class="opcion-top">' +
+          '<span class="opcion-titulo">' + tituloOpcion(op) + '</span>' +
+          '<span class="opcion-precio"><span class="valor">' + montoRedondo(op.monto_cuota) +
+          '</span><span class="unidad">' + (op.financiado ? "por cuota" : "saldo") + '</span></span>' +
+        '</div>' +
+        lineas +
+        '<div class="opcion-final">Precio final: <span>' + montoRedondo(op.total) + '</span></div>' +
+        sello +
+        '<div class="opcion-detalle">' + detalle + '</div>';
+
       div.addEventListener("click", function(){
-        cont.querySelectorAll(".opcion").forEach(function(o){ o.classList.remove("selected"); });
+        limpiarSeleccion();
         div.classList.add("selected");
         seleccion = op;
         $("btn-continuar").disabled = false;
@@ -441,10 +570,13 @@
   // ---------- paso 2 -> 3 ----------
   $("btn-continuar").addEventListener("click", function(){
     if(!seleccion) return;
-    var titulo = seleccion.cantidad_cuotas === 1 ? "Pago único" : (seleccion.cantidad_cuotas + " cuotas");
+    var detalle = seleccion.financiado
+      ? seleccion.cuotas_saldo + " cuotas de <b>" + montoRedondo(seleccion.monto_cuota) + "</b>"
+      : "saldo de <b>" + montoRedondo(seleccion.saldo) + "</b> en 1 pago";
     $("resumen-elegido").innerHTML =
-      "Elegiste <b>" + titulo + "</b> · total <b>" + montoRedondo(seleccion.total) + "</b><br>" +
-      "Evento: <b>" + fechaLegible(elFecha.value) + "</b>";
+      "Seña de <b>" + montoRedondo(seleccion.sena) + "</b> + " + detalle + "<br>" +
+      "Precio final <b>" + montoRedondo(seleccion.total) + "</b><br>" +
+      "Evento el <b>" + fechaLegible(elFecha.value) + "</b>";
     err($("err-cuenta"), "");
     mostrar("paso-cuenta");
   });
@@ -471,7 +603,7 @@
         usuario: elUsuario.value.trim(),
         clave: elClave.value,
         fecha_evento: elFecha.value,
-        cantidad_cuotas: seleccion.cantidad_cuotas
+        cuotas_saldo: seleccion.cuotas_saldo
       })
     }).then(function(res){
       btn.disabled = false;
