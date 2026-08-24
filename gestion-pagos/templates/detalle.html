@@ -1,31 +1,69 @@
 {% extends "base.html" %}
-{% block title %}{{ c.nombre }}{% endblock %}
+{% block title %}Editar — {{ c.nombre }}{% endblock %}
 {% block content %}
+
+<p class="volver"><a href="{{ url_for('dashboard') }}">&larr; Volver al panel</a></p>
+
 <div class="card">
-  <h1>{{ c.nombre }}</h1>
+  <h1>{{ c.concepto or 'Cobro' }} — {{ c.nombre }}</h1>
   <p class="estado estado-{{ c.estado }}">{{ 'Pagado' if c.estado == 'pagado' else 'Pendiente' }}</p>
 
+  <form method="post" class="form-editar">
+    <label>Cliente
+      <input type="text" name="nombre" value="{{ c.nombre or '' }}">
+    </label>
+
+    <label>Concepto
+      <input type="text" name="concepto" value="{{ c.concepto or '' }}" placeholder="Ej: Cuota 2/3">
+    </label>
+
+    <label>Monto exacto a transferir
+      <input type="text" name="monto_esperado" value="{{ '%.2f'|format(c.monto_esperado) }}" inputmode="decimal">
+      <small>Los centavos son lo que identifica esta cuota. Si los cambiás, avisale al cliente el monto nuevo.</small>
+    </label>
+
+    <label>Vence
+      <input type="date" name="fecha_vencimiento" value="{{ c.fecha_vencimiento or '' }}">
+    </label>
+
+    <label>Estado
+      <select name="estado">
+        <option value="pendiente" {% if c.estado != 'pagado' %}selected{% endif %}>Pendiente</option>
+        <option value="pagado" {% if c.estado == 'pagado' %}selected{% endif %}>Pagada</option>
+      </select>
+      <small>Si la pasás a pendiente se borra el pago registrado y vuelve a poder detectarse sola.</small>
+    </label>
+
+    <label>Notas
+      <input type="text" name="notas" value="{{ c.notas or '' }}">
+    </label>
+
+    <button type="submit" class="boton">Guardar cambios</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Datos para cobrar</h2>
   <dl>
-    <dt>Evento</dt><dd>{{ c.evento or '-' }}</dd>
-    <dt>Teléfono</dt><dd>{{ c.telefono or '-' }}</dd>
-    <dt>Monto exacto a transferir</dt><dd class="monto">${{ '%.2f'|format(c.monto_esperado) }}</dd>
-    <dt>Alias / CVU</dt><dd>{{ alias }}</dd>
-    <dt>Notas</dt><dd>{{ c.notas or '-' }}</dd>
+    <dt>Alias</dt><dd>{{ alias }}</dd>
+    {% if cvu %}<dt>CVU</dt><dd>{{ cvu }}</dd>{% endif %}
+    <dt>Monto exacto</dt><dd class="monto">${{ c.monto_esperado|pesos }}</dd>
+    {% if c.evento %}<dt>Evento</dt><dd>{{ c.evento }}</dd>{% endif %}
+    {% if c.telefono %}<dt>Teléfono</dt><dd>{{ c.telefono }}</dd>{% endif %}
     {% if c.estado == 'pagado' %}
-    <dt>Fecha de pago</dt><dd>{{ c.fecha_pago }}</dd>
-    <dt>ID de pago MP</dt><dd>{{ c.mp_payment_id }}</dd>
+    <dt>Fecha de pago</dt><dd>{{ c.fecha_pago or '-' }}</dd>
+    <dt>ID de pago MP</dt><dd>{{ c.mp_payment_id or '-' }}</dd>
     {% endif %}
   </dl>
-
-  <p class="ayuda">Importante: que transfiera el monto exacto, con los centavos incluidos.
-  Así el sistema sabe que ese pago es tuyo y no de otro cliente.</p>
-
-  {% if c.estado == 'pendiente' %}
-  <form method="post" action="{{ url_for('marcar_pagado_manual', cliente_id=c.id) }}">
-    <button type="submit" class="boton secundario">Marcar como pagado manualmente</button>
-  </form>
-  {% endif %}
-
-  <a href="{{ url_for('dashboard') }}">&larr; Volver</a>
+  <p class="ayuda">El cliente tiene que transferir el monto exacto, con los centavos incluidos.
+  Así el sistema sabe de quién es ese pago.</p>
 </div>
+
+<div class="card">
+  <form method="post" action="{{ url_for('eliminar_cuota_admin', cliente_id=c.id) }}"
+        onsubmit="return confirm('¿Eliminar esta cuota? No se puede deshacer.');">
+    <button type="submit" class="boton peligro">Eliminar esta cuota</button>
+  </form>
+</div>
+
 {% endblock %}
