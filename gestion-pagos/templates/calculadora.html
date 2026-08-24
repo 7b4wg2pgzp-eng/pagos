@@ -500,23 +500,20 @@
       var a = document.createElement("a");
       a.className = "btn btn-ghost btn-billetera";
       a.href = b.url;
-      a.target = "_blank";
-      a.rel = "noopener";
+      // Sin target="_blank" y sin preventDefault a propósito: en iOS los
+      // Universal Links solo abren la app cuando el click de un <a> navega
+      // de forma nativa, en la misma pestaña. Interceptarlo o abrirlo con
+      // window.open garantiza que caiga en la web aunque la app esté instalada.
       a.textContent = "Copiar " + etiquetaDato + " y abrir " + b.nombre;
-      a.addEventListener("click", function(ev){
-        ev.preventDefault();
-        var abrir = function(){ window.open(b.url, "_blank", "noopener"); };
-        // Copiamos primero y recién después navegamos: si se abre la otra app
-        // en el mismo gesto, el navegador puede cancelar el copiado.
-        if(navigator.clipboard && navigator.clipboard.writeText){
-          navigator.clipboard.writeText(textoACopiar).then(function(){
-            a.textContent = "Copiado, abriendo…";
-            setTimeout(abrir, 250);
-          }, abrir);
-        } else {
-          copiar(textoACopiar, a);
-          setTimeout(abrir, 250);
-        }
+      a.addEventListener("click", function(){
+        // Copiamos sin bloquear ni demorar la navegación.
+        try {
+          if(navigator.clipboard && navigator.clipboard.writeText){
+            navigator.clipboard.writeText(textoACopiar);
+          } else {
+            copiar(textoACopiar, a);
+          }
+        } catch(e){}
       });
       cont.appendChild(a);
     });
