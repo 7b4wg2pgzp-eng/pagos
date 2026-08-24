@@ -254,6 +254,13 @@
   }
   .copy-btn:active{transform:scale(.95);}
 
+  .billeteras{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);}
+  .btn-billetera{
+    display:block;width:100%;text-align:center;text-decoration:none;
+    margin-bottom:8px;
+  }
+  .btn-billetera:last-child{margin-bottom:0;}
+
   .celebracion{
     text-align:center;padding:20px;border:1px solid rgba(143,209,158,.4);
     border-radius:16px;
@@ -471,6 +478,49 @@
     der.appendChild(val); der.appendChild(btn);
     fila.appendChild(izq); fila.appendChild(der);
     return fila;
+  }
+
+  // Billeteras a las que ofrecemos saltar. Se usa el link https y no un
+  // esquema propio (mercadopago://) a propósito: si la app está instalada el
+  // sistema la abre, y si no, cae en la web. Así el botón nunca queda muerto.
+  var BILLETERAS = [
+    { nombre: "Mercado Pago", url: "https://www.mercadopago.com.ar/" }
+  ];
+
+  function botonesBilletera(textoACopiar, etiquetaDato){
+    var cont = document.createElement("div");
+    cont.className = "billeteras";
+    var titulo = document.createElement("p");
+    titulo.className = "hint";
+    titulo.style.margin = "0 0 8px";
+    titulo.textContent = "Atajo: te copia el " + etiquetaDato + " y abre la billetera.";
+    cont.appendChild(titulo);
+
+    BILLETERAS.forEach(function(b){
+      var a = document.createElement("a");
+      a.className = "btn btn-ghost btn-billetera";
+      a.href = b.url;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.textContent = "Copiar " + etiquetaDato + " y abrir " + b.nombre;
+      a.addEventListener("click", function(ev){
+        ev.preventDefault();
+        var abrir = function(){ window.open(b.url, "_blank", "noopener"); };
+        // Copiamos primero y recién después navegamos: si se abre la otra app
+        // en el mismo gesto, el navegador puede cancelar el copiado.
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          navigator.clipboard.writeText(textoACopiar).then(function(){
+            a.textContent = "Copiado, abriendo…";
+            setTimeout(abrir, 250);
+          }, abrir);
+        } else {
+          copiar(textoACopiar, a);
+          setTimeout(abrir, 250);
+        }
+      });
+      cont.appendChild(a);
+    });
+    return cont;
   }
 
   function limpiarSeleccion(){
@@ -697,6 +747,14 @@
         ayuda.className = "hint";
         ayuda.textContent = "Importante: transferí el monto exacto, con los centavos incluidos, para que el sistema detecte que este pago es tuyo.";
         box.appendChild(ayuda);
+        // El alias es el primer dato que pide la billetera, así que es el que
+        // conviene dejar en el portapapeles al saltar.
+        box.appendChild(botonesBilletera(alias || cvu, alias ? "alias" : "CVU"));
+        var volve = document.createElement("p");
+        volve.className = "hint";
+        volve.style.marginTop = "8px";
+        volve.textContent = "Cuando la billetera te pida el importe, volvé acá y copiá el monto exacto.";
+        box.appendChild(volve);
         btn.addEventListener("click", function(){ box.classList.toggle("abierto"); });
         div.appendChild(btn);
         div.appendChild(box);
