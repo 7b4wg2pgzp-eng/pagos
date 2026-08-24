@@ -378,6 +378,7 @@
         <span class="precio-valor" id="precio-sena"></span>
       </div>
       <p class="precio-nota">La seña es fija y se abona al confirmar el plan, para reservar la fecha.</p>
+      <p class="precio-nota" id="nota-impuestos" style="display:none">Todos los montos son finales: incluyen impuestos y gastos administrativos.</p>
     </div>
 
     <div class="limite-box">
@@ -451,7 +452,8 @@
   </section>
 
   <footer class="pie">
-    Cada cuota queda registrada al instante. Tu lugar para la fecha del evento queda reservado.
+    Cada cuota queda registrada al instante. Tu lugar para la fecha del evento queda reservado.<br>
+    Los montos son finales e incluyen impuestos y gastos administrativos.
   </footer>
 </div>
 
@@ -583,6 +585,9 @@
     $("precio-servicio").textContent = montoRedondo(d.precio_contado);
     $("precio-sena").textContent = montoRedondo(d.sena);
     $("limite-fecha").textContent = fechaLegible(d.limite_pago);
+    // La aclaración solo aparece si los montos efectivamente traen el recargo.
+    var notaImp = document.getElementById("nota-impuestos");
+    if(notaImp){ notaImp.style.display = d.mp_activo ? "block" : "none"; }
 
     $("sub-opciones").textContent = d.hay_financiacion
       ? "Elegí en cuántos pagos abonás el saldo:"
@@ -608,7 +613,10 @@
 
       var sello;
       if(op.tramo === "contado"){
-        sello = '<span class="opcion-recargo sin-interes">Sin recargo</span>';
+        // Antes decía "Sin recargo". Con los montos finales eso se lee como
+        // "acá no hay ningún costo extra" y abre la pregunta de si en las
+        // otras opciones sí lo hay.
+        sello = '<span class="opcion-recargo sin-interes">Precio de contado</span>';
       } else if(op.tramo === "financiado_largo"){
         sello = '<span class="opcion-recargo largo">Financiación extendida</span>';
       } else {

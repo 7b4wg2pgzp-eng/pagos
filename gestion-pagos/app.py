@@ -549,16 +549,32 @@ def api_opciones_plan():
     validas = planes.cuotas_disponibles(fecha_evento)
     opciones = [planes.resumen_opcion(fecha_evento, n) for n in validas]
 
+    # Si el cobro va por Mercado Pago, la calculadora tiene que mostrar el
+    # mismo número que después se cobra. Si acá dijera $87.500 y en el panel
+    # apareciera $88.358, el cliente ve que le cambiaron el precio.
+    mp_activo = bool(conf.get("mp_checkout_activo")) and bool(mp.MP_ACCESS_TOKEN)
+    if mp_activo:
+        def final(v):
+            return monto_con_recargo(v, conf)
+        for op in opciones:
+            for k in ("sena", "saldo", "monto_cuota", "ultima_cuota", "total"):
+                if op.get(k) is not None:
+                    op[k] = final(op[k])
+            for c in op.get("cuotas", []):
+                if c.get("monto") is not None:
+                    c["monto"] = final(c["monto"])
+
     return jsonify(
         {
-            "precio_contado": conf["presupuesto_base"],
-            "precio_financiado": conf["presupuesto_financiado"],
-            "precio_financiado_largo": conf["presupuesto_financiado_largo"],
-            "sena": conf["sena"],
+            "precio_contado": final(conf["presupuesto_base"]) if mp_activo else conf["presupuesto_base"],
+            "precio_financiado": final(conf["presupuesto_financiado"]) if mp_activo else conf["presupuesto_financiado"],
+            "precio_financiado_largo": final(conf["presupuesto_financiado_largo"]) if mp_activo else conf["presupuesto_financiado_largo"],
+            "sena": final(conf["sena"]) if mp_activo else conf["sena"],
             "cuota_minima": conf["cuota_minima"],
             "limite_pago": planes.limite_pago(fecha_evento).isoformat(),
             "max_cuotas": max(validas),
             "hay_financiacion": len(validas) > 1,
+            "mp_activo": mp_activo,
             "opciones": opciones,
         }
     )
