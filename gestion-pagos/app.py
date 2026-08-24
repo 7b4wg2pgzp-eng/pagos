@@ -1,11 +1,13 @@
 import os
 import json
 import functools
+from datetime import datetime, date
 
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 
 import db
 import mp
+import planes
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "cambiar-esta-clave-en-produccion")
@@ -100,6 +102,116 @@ def marcar_pagado_manual(cliente_id):
     db.marcar_pagado(cliente_id, mp_payment_id="manual")
     flash("Marcado como pagado manualmente")
     return redirect(url_for("detalle_cliente", cliente_id=cliente_id))
+
+
+def _parsear_fecha(valor):
+    try:
+        return datetime.strptime(valor, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
+def _cuota_publica(row):
+    """Recorta una fila de `clientes` a los campos que la calculadora
+    pública puede ver (sin teléfono, notas ni mp_payment_id)."""
+    return {
+        "id": row["id"],
+        "concepto": row["concepto"],
+        "monto": float(row["monto_esperado"]),
+        "fecha_vencimiento": row["fecha_vencimiento"],
+        "estado": row["estado"],
+    }
+
+
+@app.route("/cuotas")
+def calculadora_cuotas():
+    """Página pública de la calculadora de cuotas para clientes."""
+    return render_template("calculadora.html", alias=ALIAS_COBRO)
+
+
+@app.route("/api/planes/opciones", methods=["POST"])
+def api_opciones_plan():
+    """Simulación (no escribe nada): dada una fecha de evento, devuelve
+    todas las cantidades de cuotas posibles con su desglose calculado."""
+    body = request.get_json(silent=True) or {}
+    fecha_evento = _parsear_fecha(body.get("fecha_evento", ""))
+    if not fecha_evento:
+        return jsonify({"error": "fecha_evento inválida, formato YYYY-MM-DD"}), 400
+    if fecha_evento < date.today():
+        return jsonify({"error": "La fecha del evento ya pasó"}), 400
+
+    max_cuotas = planes.cuotas_maximas_disponibles(fecha_evento)
+    opciones = []
+    for n in range(1, max_cuotas + 1):
+        plan = planes.calcular_plan(fecha_evento, n)
+        opciones.append(
+            {
+                "cantidad_cuotas": n,
+                "total": sum(c["monto"] for c in plan),
+                "cuotas": [
+                    {
+                        "concepto": c["concepto"],
+                        "monto": c["monto"],
+                        "fecha_vencimiento": c["fecha_vencimiento"].isoformat(),
+                    }
+                    for c in plan
+                ],
+            }
+        )
+    return jsonify({"max_cuotas": max_cuotas, "opciones": opciones})
+
+
+@app.route("/api/planes", methods=["POST"])
+def api_crear_plan():
+    """Confirma y persiste el plan elegido: crea un registro real por cada
+    cuota (misma lógica de montos únicos que usan los clientes del panel),
+    para que el webhook de Mercado Pago las detecte igual que cualquier
+    otro pago."""
+    body = request.get_json(silent=True) or {}
+    nombre = (body.get("nombre") or "Cliente calculadora").strip()
+    telefono = (body.get("telefono") or "").strip()
+    fecha_evento = _parsear_fecha(body.get("fecha_evento", ""))
+    try:
+        cantidad_cuotas = int(body.get("cantidad_cuotas"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "cantidad_cuotas inválida"}), 400
+
+    if not fecha_evento:
+        return jsonify({"error": "fecha_evento inválida, formato YYYY-MM-DD"}), 400
+    if fecha_evento < date.today():
+        return jsonify({"error": "La fecha del evento ya pasó"}), 400
+
+    max_cuotas = planes.cuotas_maximas_disponibles(fecha_evento)
+    if cantidad_cuotas < 1 or cantidad_cuotas > max_cuotas:
+        return jsonify({"error": f"cantidad_cuotas fuera de rango (máximo {max_cuotas})"}), 400
+
+    # El monto de cada cuota se calcula acá, en el servidor, a partir de la
+    # fecha y la cantidad de cuotas — nunca se confía en un monto mandado
+    # por el cliente.
+    cuotas_calc = planes.calcular_plan(fecha_evento, cantidad_cuotas)
+    plan_token, ids = db.crear_plan(
+        nombre=nombre,
+        telefono=telefono,
+        evento=fecha_evento.isoformat(),
+        cuotas=cuotas_calc,
+        notas="Creado desde la calculadora de cuotas",
+    )
+    plan = db.obtener_plan(plan_token)
+    return jsonify(
+        {
+            "plan_token": plan_token,
+            "alias": ALIAS_COBRO,
+            "cuotas": [_cuota_publica(c) for c in plan],
+        }
+    )
+
+
+@app.route("/api/planes/<token>")
+def api_obtener_plan(token):
+    plan = db.obtener_plan(token)
+    if not plan:
+        return jsonify({"error": "Plan no encontrado"}), 404
+    return jsonify({"alias": ALIAS_COBRO, "cuotas": [_cuota_publica(c) for c in plan]})
 
 
 @app.route("/sincronizar", methods=["POST"])
