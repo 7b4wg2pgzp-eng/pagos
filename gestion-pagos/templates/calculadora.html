@@ -254,12 +254,60 @@
   }
   .copy-btn:active{transform:scale(.95);}
 
-  .billeteras{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);}
-  .btn-billetera{
-    display:block;width:100%;text-align:center;text-decoration:none;
-    margin-bottom:8px;
+  .paso{
+    display:flex;align-items:flex-start;gap:9px;
+    font-size:13px;color:rgba(244,239,228,.72);margin:14px 0 8px;
   }
-  .btn-billetera:last-child{margin-bottom:0;}
+  .paso:first-child{margin-top:4px;}
+  .paso-num{
+    flex:0 0 19px;height:19px;border-radius:50%;
+    background:rgba(212,175,110,.15);border:1px solid var(--line);
+    color:var(--gold-lit);font-size:11px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;margin-top:1px;
+  }
+  .aviso-pago{
+    margin:0 0 16px;padding:12px 14px;border-radius:12px;font-size:13.5px;
+    background:rgba(212,175,110,.1);border:1px solid rgba(212,175,110,.3);
+    color:var(--gold-lit);text-align:center;
+  }
+  .aviso-pago.ok{
+    background:rgba(143,209,158,.1);border-color:rgba(143,209,158,.4);
+    color:#8fd19e;
+  }
+  .btn-mp{width:100%;margin-top:4px;}
+  .btn-pagar{width:100%;margin-top:14px;}
+
+  /* Barra de avance: ver lo ya hecho empuja a completar lo que falta. */
+  .progreso-barra{
+    height:5px;border-radius:99px;background:rgba(244,239,228,.09);
+    overflow:hidden;margin:10px auto 0;max-width:230px;
+  }
+  .progreso-barra span{
+    display:block;height:100%;width:0;border-radius:99px;
+    background:linear-gradient(90deg,var(--gold),var(--gold-lit));
+    transition:width .5s ease;
+  }
+
+  /* La próxima cuota se levanta; las demás quedan atrás. */
+  .cuota-foco{
+    border-color:rgba(212,175,110,.45);
+    box-shadow:0 0 0 1px rgba(212,175,110,.12), 0 8px 30px rgba(0,0,0,.35);
+  }
+  .cuota:not(.cuota-foco):not(.pagada){opacity:.62;}
+  .cuota:not(.cuota-foco):not(.pagada):hover{opacity:1;}
+
+  .venc-urgente{color:var(--gold-lit) !important;font-weight:600;}
+  .venc-vencida{color:#e0857a !important;font-weight:600;}
+
+  .sello-seguro{
+    margin:10px 0 0;text-align:center;font-size:11.5px;
+    color:rgba(244,239,228,.45);letter-spacing:.02em;
+  }
+  .hint-ojo{
+    margin-top:12px;padding:10px 12px;border-radius:10px;
+    background:rgba(212,175,110,.07);border:1px solid rgba(212,175,110,.2);
+    color:rgba(244,239,228,.66);
+  }
 
   .celebracion{
     text-align:center;padding:20px;border:1px solid rgba(143,209,158,.4);
@@ -386,12 +434,14 @@
 
   <!-- PLAN confirmado -->
   <section id="paso-plan" class="oculto">
+    <p class="aviso-pago" id="aviso-pago" style="display:none">Confirmando tu pago con Mercado Pago…</p>
     <div class="celebracion oculto" id="celebracion">
       <p class="titulo">Evento totalmente abonado</p>
       <p style="margin:6px 0 0;font-size:13.5px;color:rgba(244,239,228,.7)">Gracias, ya está todo listo de tu lado.</p>
     </div>
     <div class="plan-header">
       <p class="estado-general" id="plan-resumen"></p>
+      <div class="progreso-barra"><span id="progreso-relleno"></span></div>
       <p class="quien" id="plan-quien"></p>
     </div>
     <div id="lista-cuotas"></div>
@@ -401,7 +451,7 @@
   </section>
 
   <footer class="pie">
-    Los pagos se detectan automáticamente al transferir el monto exacto de cada cuota.
+    Cada cuota queda registrada al instante. Tu lugar para la fecha del evento queda reservado.
   </footer>
 </div>
 
@@ -480,44 +530,21 @@
     return fila;
   }
 
-  // Billeteras a las que ofrecemos saltar. Se usa el link https y no un
-  // esquema propio (mercadopago://) a propósito: si la app está instalada el
-  // sistema la abre, y si no, cae en la web. Así el botón nunca queda muerto.
-  var BILLETERAS = [
-    { nombre: "Mercado Pago", url: "https://www.mercadopago.com.ar/" }
-  ];
-
-  function botonesBilletera(textoACopiar, etiquetaDato){
-    var cont = document.createElement("div");
-    cont.className = "billeteras";
-    var titulo = document.createElement("p");
-    titulo.className = "hint";
-    titulo.style.margin = "0 0 8px";
-    titulo.textContent = "Atajo: te copia el " + etiquetaDato + " y abre la billetera.";
-    cont.appendChild(titulo);
-
-    BILLETERAS.forEach(function(b){
-      var a = document.createElement("a");
-      a.className = "btn btn-ghost btn-billetera";
-      a.href = b.url;
-      // Sin target="_blank" y sin preventDefault a propósito: en iOS los
-      // Universal Links solo abren la app cuando el click de un <a> navega
-      // de forma nativa, en la misma pestaña. Interceptarlo o abrirlo con
-      // window.open garantiza que caiga en la web aunque la app esté instalada.
-      a.textContent = "Copiar " + etiquetaDato + " y abrir " + b.nombre;
-      a.addEventListener("click", function(){
-        // Copiamos sin bloquear ni demorar la navegación.
-        try {
-          if(navigator.clipboard && navigator.clipboard.writeText){
-            navigator.clipboard.writeText(textoACopiar);
-          } else {
-            copiar(textoACopiar, a);
-          }
-        } catch(e){}
-      });
-      cont.appendChild(a);
-    });
-    return cont;
+  // Nota: no hay forma de abrir la billetera con el alias y el monto ya
+  // cargados. El QR interoperable haría eso, pero pasa por la red de
+  // adquirencia y cobra arancel — justo lo que esta plataforma evita.
+  // Mercado Pago tampoco resuelve su link https a la app. Así que el camino
+  // es copiar y pegar, y lo que sí podemos hacer es que sea imposible
+  // equivocarse: pasos numerados y el monto siempre copiado, nunca tipeado.
+  function paso(numero, texto){
+    var p = document.createElement("div");
+    p.className = "paso";
+    var n = document.createElement("span");
+    n.className = "paso-num"; n.textContent = numero;
+    var t = document.createElement("span");
+    t.textContent = texto;
+    p.appendChild(n); p.appendChild(t);
+    return p;
   }
 
   function limpiarSeleccion(){
@@ -600,7 +627,6 @@
           '</span><span class="unidad">' + (op.financiado ? "por cuota" : "saldo") + '</span></span>' +
         '</div>' +
         lineas +
-        '<div class="opcion-final">Precio final: <span>' + montoRedondo(op.total) + '</span></div>' +
         sello +
         '<div class="opcion-detalle">' + detalle + '</div>';
 
@@ -622,7 +648,6 @@
       : "saldo de <b>" + montoRedondo(seleccion.saldo) + "</b> en 1 pago";
     $("resumen-elegido").innerHTML =
       "Seña de <b>" + montoRedondo(seleccion.sena) + "</b> + " + detalle + "<br>" +
-      "Precio final <b>" + montoRedondo(seleccion.total) + "</b><br>" +
       "Evento el <b>" + fechaLegible(elFecha.value) + "</b>";
     err($("err-cuenta"), "");
     mostrar("paso-cuenta");
@@ -706,55 +731,127 @@
     pollTimer = setInterval(refrescarPlan, 20000);
   }
 
+  // Días hasta el vencimiento. Devuelve null si la fecha no es usable.
+  function diasHasta(iso){
+    if(!iso) return null;
+    var p = String(iso).split("-");
+    if(p.length !== 3) return null;
+    var venc = new Date(+p[0], +p[1]-1, +p[2]);
+    var hoy = new Date();
+    hoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+    return Math.round((venc - hoy) / 86400000);
+  }
+
+  // El vencimiento en días es más concreto que una fecha: "vence en 3 días"
+  // se siente, "vence el 22 de diciembre" se archiva mentalmente.
+  function textoVencimiento(iso){
+    var d = diasHasta(iso);
+    if(d === null) return {texto:"", clase:""};
+    if(d < 0)  return {texto:"Venció hace " + Math.abs(d) + (Math.abs(d)===1?" día":" días"), clase:"venc-vencida"};
+    if(d === 0) return {texto:"Vence hoy", clase:"venc-urgente"};
+    if(d === 1) return {texto:"Vence mañana", clase:"venc-urgente"};
+    if(d <= 7)  return {texto:"Vence en " + d + " días", clase:"venc-urgente"};
+    return {texto:"Vence el " + fechaLegible(iso), clase:""};
+  }
+
+  function lanzarPago(c, boton, textoOriginal){
+    if(boton.disabled) return;
+    boton.disabled = true;
+    boton.textContent = "Un momento…";
+    pedir("/api/planes/pagar/" + c.id, {method:"POST"}).then(function(res){
+      if(res.ok && res.data.init_point){
+        window.location.href = res.data.init_point;
+      } else {
+        boton.disabled = false;
+        boton.textContent = textoOriginal;
+        alert((res.data && res.data.error) || "No se pudo abrir el pago. Probá de nuevo.");
+      }
+    }).catch(function(){
+      boton.disabled = false;
+      boton.textContent = textoOriginal;
+      alert("No se pudo abrir el pago. Probá de nuevo.");
+    });
+  }
+
   function renderPlan(data){
     var cuotas = data.cuotas, alias = data.alias, cvu = data.cvu || "";
     var pagadas = cuotas.filter(function(c){ return c.estado === "pagado"; }).length;
 
     $("celebracion").classList.toggle("oculto", pagadas !== cuotas.length);
     $("plan-resumen").textContent = pagadas + " de " + cuotas.length + " cuotas pagadas";
+    var relleno = $("progreso-relleno");
+    if(relleno){ relleno.style.width = (cuotas.length ? (pagadas / cuotas.length * 100) : 0) + "%"; }
     $("plan-quien").textContent = data.nombre ? ("Plan de " + data.nombre) : "";
+
+    // La primera pendiente es la única que pedimos ahora. Las demás quedan
+    // visibles pero apagadas: una sola decisión a la vez.
+    var idxProxima = -1;
+    for(var i = 0; i < cuotas.length; i++){
+      if(cuotas[i].estado !== "pagado"){ idxProxima = i; break; }
+    }
 
     var cont = $("lista-cuotas");
     cont.innerHTML = "";
-    cuotas.forEach(function(c){
+    cuotas.forEach(function(c, i){
       var pagada = c.estado === "pagado";
+      var esProxima = (i === idxProxima);
+      var venc = textoVencimiento(c.fecha_vencimiento);
+      // Un solo número a la vista: lo que se paga. Sin decimales si es
+      // redondo — una cifra limpia se lee como precio, una con centavos
+      // se lee como cálculo y invita a revisarla.
+      var aMostrar = (data.mp_activo && c.monto_mp) ? c.monto_mp : c.monto;
+      var montoTexto = (Number(aMostrar) % 1 === 0) ? montoRedondo(aMostrar) : moneda(aMostrar);
+
       var div = document.createElement("div");
-      div.className = "cuota" + (pagada ? " pagada" : "");
+      div.className = "cuota" + (pagada ? " pagada" : "") + (esProxima ? " cuota-foco" : "");
       div.innerHTML =
         '<div class="cuota-top"><div>' +
           '<div class="cuota-concepto">' + c.concepto + '</div>' +
-          '<div class="cuota-fecha">Vence el ' + fechaLegible(c.fecha_vencimiento) + '</div>' +
-          '<span class="badge ' + (pagada ? "badge-pagada" : "badge-pendiente") + '">' +
-            (pagada ? "Pagada" : "Pendiente") + '</span>' +
-        '</div><div class="cuota-monto">' + moneda(c.monto) + '</div></div>';
+          (pagada
+            ? '<span class="badge badge-pagada">Pagada</span>'
+            : '<div class="cuota-fecha ' + venc.clase + '">' + venc.texto + '</div>') +
+        '</div><div class="cuota-monto">' + montoTexto + '</div></div>';
 
       if(!pagada){
-        var btn = document.createElement("button");
-        btn.className = "btn btn-ghost";
-        btn.style.marginTop = "12px";
-        btn.textContent = "Pagar esta cuota";
-        var box = document.createElement("div");
-        box.className = "pagar-box";
-        box.appendChild(filaCopiable("Alias", alias, alias));
-        if(cvu) box.appendChild(filaCopiable("CVU", cvu, cvu));
-        // El monto se copia en formato plano (1234.56), que es lo que
-        // aceptan las billeteras al pegarlo.
-        box.appendChild(filaCopiable("Monto exacto", moneda(c.monto), Number(c.monto).toFixed(2)));
-        var ayuda = document.createElement("p");
-        ayuda.className = "hint";
-        ayuda.textContent = "Importante: transferí el monto exacto, con los centavos incluidos, para que el sistema detecte que este pago es tuyo.";
-        box.appendChild(ayuda);
-        // El alias es el primer dato que pide la billetera, así que es el que
-        // conviene dejar en el portapapeles al saltar.
-        box.appendChild(botonesBilletera(alias || cvu, alias ? "alias" : "CVU"));
-        var volve = document.createElement("p");
-        volve.className = "hint";
-        volve.style.marginTop = "8px";
-        volve.textContent = "Cuando la billetera te pida el importe, volvé acá y copiá el monto exacto.";
-        box.appendChild(volve);
-        btn.addEventListener("click", function(){ box.classList.toggle("abierto"); });
-        div.appendChild(btn);
-        div.appendChild(box);
+        if(data.mp_activo && c.monto_mp){
+          // Un botón, una palabra, sin pasos intermedios. Las cuotas que
+          // todavía no vencieron dicen "Adelantar": el que quiere pagar de
+          // más adelante ve que puede, sin que compita con la que toca ahora.
+          var etiqueta = esProxima ? "Pagar" : "Adelantar";
+          var bPagar = document.createElement("button");
+          bPagar.type = "button";
+          bPagar.className = "btn " + (esProxima ? "btn-primary" : "btn-ghost") + " btn-pagar";
+          bPagar.textContent = etiqueta;
+          bPagar.addEventListener("click", function(){ lanzarPago(c, bPagar, etiqueta); });
+          div.appendChild(bPagar);
+
+          if(esProxima){
+            var seguro = document.createElement("p");
+            seguro.className = "sello-seguro";
+            seguro.textContent = "Pago protegido por Mercado Pago";
+            div.appendChild(seguro);
+          }
+        } else {
+          // Sin checkout activo, se cae a los datos para transferir.
+          var btn = document.createElement("button");
+          btn.className = "btn btn-ghost";
+          btn.style.marginTop = "12px";
+          btn.textContent = "Pagar esta cuota";
+          var box = document.createElement("div");
+          box.className = "pagar-box";
+          box.appendChild(paso("1", "Copiá el alias y pegalo en tu billetera como destinatario."));
+          box.appendChild(filaCopiable("Alias", alias, alias));
+          if(cvu) box.appendChild(filaCopiable("CVU", cvu, cvu));
+          box.appendChild(paso("2", "Volvé acá y copiá el monto. No lo escribas a mano."));
+          box.appendChild(filaCopiable("Monto exacto", moneda(c.monto), Number(c.monto).toFixed(2)));
+          var ayuda = document.createElement("p");
+          ayuda.className = "hint hint-ojo";
+          ayuda.textContent = "Los centavos del final no son un error: son los que hacen que el sistema reconozca que este pago es tuyo y marque la cuota sola. Si transferís un monto redondo, no se detecta.";
+          box.appendChild(ayuda);
+          btn.addEventListener("click", function(){ box.classList.toggle("abierto"); });
+          div.appendChild(btn);
+          div.appendChild(box);
+        }
       }
       cont.appendChild(div);
     });
@@ -768,9 +865,51 @@
 
   elFecha.addEventListener("change", pedirOpciones);
 
+  // Vuelta desde Mercado Pago. Quien confirma el pago es el webhook, no esta
+  // pantalla, y puede tardar unos segundos en llegar: por eso reintentamos un
+  // rato en vez de mostrar el plan una sola vez y que se vea sin actualizar.
+  function esperarAcreditacion(){
+    var aviso = document.getElementById("aviso-pago");
+    if(aviso){ aviso.style.display = "block"; }
+    var intentos = 0;
+    var t = setInterval(function(){
+      intentos++;
+      pedir("/api/planes/mio").then(function(res){
+        if(res.ok){
+          planActual = res.data;
+          renderPlan(res.data);
+          var pendientes = res.data.cuotas.filter(function(x){ return x.estado !== "pagado"; });
+          if(pendientes.length < (window.__pendientesAlVolver || 99)){
+            clearInterval(t);
+            if(aviso){
+              aviso.textContent = "¡Listo! Tu pago se acreditó y la cuota quedó al día.";
+              aviso.className = "aviso-pago ok";
+              setTimeout(function(){ aviso.style.display = "none"; }, 6000);
+            }
+          }
+        }
+      }).catch(function(){});
+      if(intentos >= 10){
+        clearInterval(t);
+        if(aviso){
+          aviso.textContent = "El pago puede tardar un momento en impactar. Si en unos minutos la cuota sigue pendiente, escribinos.";
+        }
+      }
+    }, 3000);
+  }
+
   // Si ya hay sesión abierta, vamos directo al plan.
   pedir("/api/planes/mio").then(function(res){
-    if(res.ok){ abrirPlan(res.data); }
+    if(res.ok){
+      abrirPlan(res.data);
+      if(/[?&]pago=/.test(window.location.search)){
+        window.__pendientesAlVolver = res.data.cuotas.filter(function(x){
+          return x.estado !== "pagado";
+        }).length;
+        history.replaceState(null, "", window.location.pathname);
+        esperarAcreditacion();
+      }
+    }
     else { mostrar("paso-datos"); }
   }).catch(function(){ mostrar("paso-datos"); });
 })();

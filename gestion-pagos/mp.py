@@ -43,6 +43,107 @@ def search_recent_payments(limit=30):
     return resp.json().get("results", [])
 
 
+def crear_preferencia(titulo, monto, referencia_externa, url_vuelta, url_webhook=None):
+    """Arma una preferencia de Checkout Pro para cobrar UNA cuota.
+
+    Solo medios de comisión baja: saldo de Mercado Pago y pago con
+    transferencia desde cualquier banco o billetera (ambos en la banda de
+    6-8 por mil). Se excluyen tarjetas de crédito y débito, efectivo y cajero,
+    donde la comisión salta de ~0,6% a 2,99%-4,49% y el negocio deja de cerrar.
+
+    Se deja habilitada la transferencia además del saldo a propósito: si solo
+    aceptara saldo, el cliente que tiene la plata en el banco y no en Mercado
+    Pago no podría pagar y se quedaría sin ninguna salida.
+
+    `referencia_externa` es lo que después nos devuelve el webhook para saber
+    exactamente qué cuota se pagó, sin depender del monto.
+
+    Devuelve el dict de la preferencia; el link para mandar al cliente está en
+    la clave `init_point`."""
+    cuerpo = {
+        "items": [{
+            "title": titulo,
+            "quantity": 1,
+            "currency_id": "ARS",
+            "unit_price": round(float(monto), 2),
+        }],
+        "external_reference": referencia_externa,
+        "back_urls": {
+            "success": url_vuelta,
+            "pending": url_vuelta,
+            "failure": url_vuelta,
+        },
+        "auto_return": "approved",
+        # Fuera todo lo caro. Queda saldo en cuenta y pago con transferencia.
+        "payment_methods": {
+            "excluded_payment_types": [
+                {"id": "credit_card"},
+                {"id": "debit_card"},
+                {"id": "prepaid_card"},
+                {"id": "ticket"},
+                {"id": "atm"},
+            ],
+            "installments": 1,
+        },
+    }
+    if url_webhook:
+        cuerpo["notification_url"] = url_webhook
+
+    resp = requests.post(
+        f"{API_BASE}/checkout/preferences",
+        headers={
+            "Authorization": f"Bearer {MP_ACCESS_TOKEN}",
+            "Content-Type": "application/json",
+        },
+        json=cuerpo,
+        timeout=20,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def costo_real_del_pago(pago):
+    """Lee del pago lo que Mercado Pago cobró de verdad.
+
+    No hay API pública que diga la comisión de tu cuenta, y las tablas
+    publicadas varían según el plazo de acreditación configurado. Pero cada
+    pago aprobado trae `fee_details` con lo efectivamente descontado y
+    `net_received_amount` con lo que quedó. Esa es la única fuente exacta.
+
+    Devuelve (bruto, comision, neto, tasa) o None si el pago no trae los datos.
+    `tasa` es la comisión como porcentaje del bruto."""
+    try:
+        bruto = float(pago.get("transaction_amount") or 0)
+    except (TypeError, ValueError):
+        return None
+    if bruto <= 0:
+        return None
+
+    comision = 0.0
+    for f in (pago.get("fee_details") or []):
+        try:
+            comision += float(f.get("amount") or 0)
+        except (TypeError, ValueError):
+            continue
+
+    detalles = pago.get("transaction_details") or {}
+    neto = detalles.get("net_received_amount")
+    try:
+        neto = float(neto) if neto is not None else None
+    except (TypeError, ValueError):
+        neto = None
+
+    # Si no vino el desglose pero sí el neto, la comisión se deduce.
+    if comision <= 0 and neto is not None:
+        comision = bruto - neto
+    if neto is None:
+        neto = bruto - comision
+    if comision <= 0:
+        return None
+
+    return bruto, round(comision, 2), round(neto, 2), round(comision / bruto * 100, 4)
+
+
 def extraer_data_id(args, json_body):
     """El formato de notificación de MP tiene variantes: ?data.id=..&type=payment
     (nuevo) o ?topic=payment&id=.. (viejo), o el id viene en el body JSON."""

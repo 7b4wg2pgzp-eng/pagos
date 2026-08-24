@@ -196,7 +196,16 @@ CONFIG_DEFECTO = {
     "sena": "250000",                       # fija, nunca se divide
     "cuota_minima": "50000",                # no se ofrecen cuotas por debajo de esto
     "max_cuotas": "8",                      # tope de cuotas del saldo
+    "mp_checkout_activo": "0",              # 1 = ofrecer pago con Mercado Pago
+    "recargo_mp": "0.97",                   # % estimado para el 1er cobro: 0,8% + IVA,
+                                            # que es el arancel del rail de transferencias
+    "recargo_auto": "1",                    # 1 = usar la comisión real ya medida
+    "recargo_observado": "0",               # % medido en el último pago (lo escribe el webhook)
+    "recargo_margen": "0.3",                # % extra de colchón sobre lo medido
 }
+
+# Claves que llevan decimales (el resto se redondea a entero).
+CONFIG_DECIMAL = {"recargo_mp", "recargo_observado", "recargo_margen"}
 
 
 def leer_config():
@@ -215,7 +224,10 @@ def leer_config():
     except Exception:
         # Si la tabla todavía no existe (primer arranque), usamos los defaults.
         pass
-    return {k: int(float(v)) for k, v in conf.items()}
+    return {
+        k: (round(float(v), 4) if k in CONFIG_DECIMAL else int(float(v)))
+        for k, v in conf.items()
+    }
 
 
 def guardar_config(nuevos):
@@ -224,13 +236,14 @@ def guardar_config(nuevos):
     for clave, valor in nuevos.items():
         if clave not in CONFIG_DEFECTO:
             continue
+        texto = str(round(float(valor), 4)) if clave in CONFIG_DECIMAL else str(int(valor))
         _run(
             conn,
             "INSERT INTO config (clave, valor) VALUES (?, ?) "
             "ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor",
             "INSERT INTO config (clave, valor) VALUES (%s, %s) "
             "ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor",
-            (clave, str(int(valor))),
+            (clave, texto),
         )
     conn.commit()
     conn.close()
@@ -685,6 +698,30 @@ def importar_todo(datos, forzar=False):
     finally:
         conn.close()
     return insertadas
+
+
+def anotar_en_cuota(cliente_id, texto):
+    """Agrega una línea a las notas de una cuota, sin pisar lo que ya había."""
+    conn = get_db()
+    cur = _run(
+        conn,
+        "SELECT notas FROM clientes WHERE id = ?",
+        "SELECT notas FROM clientes WHERE id = %s",
+        (cliente_id,),
+    )
+    fila = cur.fetchone()
+    previo = ""
+    if fila is not None:
+        previo = (dict(fila).get("notas") if not isinstance(fila, tuple) else fila[0]) or ""
+    nuevo = (previo + "\n" + texto).strip() if previo else texto
+    _run(
+        conn,
+        "UPDATE clientes SET notas = ? WHERE id = ?",
+        "UPDATE clientes SET notas = %s WHERE id = %s",
+        (nuevo, cliente_id),
+    )
+    conn.commit()
+    conn.close()
 
 
 def log_webhook(payload, resultado):

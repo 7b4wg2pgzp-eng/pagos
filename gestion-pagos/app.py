@@ -1,5 +1,6 @@
 import os
 import json
+import math
 import functools
 from datetime import datetime, date
 
@@ -104,12 +105,55 @@ def _cuota_publica(row):
     }
 
 
+def tasa_comision(conf=None):
+    """El porcentaje de comisión a usar para el cálculo, en %.
+
+    Prioriza lo que Mercado Pago cobró de verdad en el último pago (lo mide el
+    webhook) por sobre el valor estimado a mano: las tablas publicadas varían
+    según el plazo de acreditación de cada cuenta y quedan viejas. Al medido se
+    le suma un margen, porque la comisión puede moverse hacia arriba entre un
+    pago y el siguiente y ahí la diferencia la pagarías vos."""
+    conf = conf or db.leer_config()
+    manual = float(conf.get("recargo_mp", 0) or 0)
+    if not conf.get("recargo_auto"):
+        return manual
+    observado = float(conf.get("recargo_observado", 0) or 0)
+    if observado <= 0:
+        return manual  # todavía no hubo ningún pago del cual aprender
+    return observado + float(conf.get("recargo_margen", 0) or 0)
+
+
+def monto_con_recargo(monto, conf=None):
+    """Lo que hay que cobrar para que, después de la comisión de Mercado Pago,
+    quede neto el monto de la cuota. Se divide, no se suma: la comisión se
+    calcula sobre el total cobrado, así que sumarle el porcentaje dejaría
+    corto por la diferencia."""
+    conf = conf or db.leer_config()
+    r = tasa_comision(conf) / 100.0
+    if r <= 0 or r >= 1:
+        return round(float(monto), 2)
+    # Se redondea al peso de arriba: el cliente ve una cifra limpia en vez de
+    # centavos raros, y la diferencia queda del lado que cobra. Acá los
+    # centavos únicos ya no hacen falta — el checkout matchea por referencia,
+    # no por monto.
+    return float(math.ceil(float(monto) / (1 - r)))
+
+
 def _respuesta_plan(plan_token, incluir_token=True):
     plan = db.obtener_plan(plan_token)
+    conf = db.leer_config()
+    mp_activo = bool(conf.get("mp_checkout_activo")) and bool(mp.MP_ACCESS_TOKEN)
+    cuotas = []
+    for c in plan:
+        pub = _cuota_publica(c)
+        if mp_activo and c["estado"] != "pagado":
+            pub["monto_mp"] = monto_con_recargo(c["monto_esperado"], conf)
+        cuotas.append(pub)
     datos = {
         "alias": ALIAS_COBRO,
         "cvu": CVU_COBRO,
-        "cuotas": [_cuota_publica(c) for c in plan],
+        "mp_activo": mp_activo,
+        "cuotas": cuotas,
     }
     if incluir_token:
         datos["plan_token"] = plan_token
@@ -221,6 +265,24 @@ def guardar_configuracion():
     if nuevos["max_cuotas"] > 24:
         flash("El tope de cuotas no puede ser mayor a 24")
         return redirect(url_for("dashboard"))
+
+    # Pago con saldo de Mercado Pago (opcional, se activa desde el panel).
+    nuevos["mp_checkout_activo"] = 1 if request.form.get("mp_checkout_activo") == "si" else 0
+    nuevos["recargo_auto"] = 1 if request.form.get("recargo_auto") == "si" else 0
+    recargo = _monto(request.form.get("recargo_mp", ""), None)
+    if recargo is None or recargo < 0 or recargo >= 30:
+        flash("La comisión estimada tiene que ser un porcentaje entre 0 y 30")
+        return redirect(url_for("dashboard"))
+    nuevos["recargo_mp"] = recargo
+    margen = _monto(request.form.get("recargo_margen", ""), None)
+    if margen is None or margen < 0 or margen >= 10:
+        flash("El margen de seguridad tiene que ser un porcentaje entre 0 y 10")
+        return redirect(url_for("dashboard"))
+    nuevos["recargo_margen"] = margen
+    if nuevos["mp_checkout_activo"] and not mp.MP_ACCESS_TOKEN:
+        flash("No se puede activar el pago con Mercado Pago: falta MP_ACCESS_TOKEN")
+        return redirect(url_for("dashboard"))
+
     db.guardar_config(nuevos)
     flash("Montos actualizados. Los planes nuevos ya usan estos valores.")
     return redirect(url_for("dashboard"))
@@ -597,6 +659,58 @@ def api_salir_plan():
 
 
 # --------------------------------------------------------------------------
+# Pago con saldo de Mercado Pago (opcional)
+# --------------------------------------------------------------------------
+
+@app.route("/api/planes/pagar/<int:cliente_id>", methods=["POST"])
+def api_pagar_cuota(cliente_id):
+    """Crea la preferencia de Checkout para una cuota y devuelve el link."""
+    conf = db.leer_config()
+    if not conf.get("mp_checkout_activo"):
+        return jsonify({"error": "El pago con Mercado Pago no está habilitado"}), 400
+    if not mp.MP_ACCESS_TOKEN:
+        return jsonify({"error": "Falta configurar el acceso a Mercado Pago"}), 500
+
+    token = session.get("plan_token")
+    if not token:
+        return jsonify({"error": "No hay sesión"}), 401
+
+    cuota = db.obtener_cliente(cliente_id)
+    # La cuota tiene que existir y pertenecer al plan de la sesión: si no,
+    # cualquiera podría generar links de pago de cuotas ajenas.
+    if not cuota or cuota["plan_token"] != token:
+        return jsonify({"error": "Cuota no encontrada"}), 404
+    if cuota["estado"] == "pagado":
+        return jsonify({"error": "Esa cuota ya está pagada"}), 409
+
+    a_cobrar = monto_con_recargo(cuota["monto_esperado"], conf)
+    raiz = request.url_root.rstrip("/")
+    try:
+        pref = mp.crear_preferencia(
+            titulo=f"{cuota['concepto'] or 'Cuota'} — {cuota['nombre']}",
+            monto=a_cobrar,
+            referencia_externa=f"cuota:{cuota['id']}",
+            url_vuelta=f"{raiz}/pago/vuelta",
+            url_webhook=f"{raiz}/webhook/mercadopago",
+        )
+    except Exception as e:
+        return jsonify({"error": f"No se pudo generar el pago: {e}"}), 502
+
+    link = pref.get("init_point") or pref.get("sandbox_init_point")
+    if not link:
+        return jsonify({"error": "Mercado Pago no devolvió el link de pago"}), 502
+    return jsonify({"init_point": link, "monto": a_cobrar})
+
+
+@app.route("/pago/vuelta")
+def pago_vuelta():
+    """Adonde vuelve el cliente desde Mercado Pago. El pago lo confirma el
+    webhook, no esta pantalla — acá solo lo devolvemos a su plan."""
+    estado = request.args.get("status") or request.args.get("collection_status") or ""
+    return redirect(url_for("calculadora_cuotas", pago=estado or "vuelta"))
+
+
+# --------------------------------------------------------------------------
 # Webhook de Mercado Pago
 # --------------------------------------------------------------------------
 
@@ -624,11 +738,62 @@ def webhook_mercadopago():
 
         if pago.get("status") == "approved":
             monto = pago.get("transaction_amount")
-            cliente = db.buscar_pendiente_por_monto(monto)
+            cliente = None
+            via = ""
+
+            # 1) Checkout: la referencia dice exactamente qué cuota se pagó.
+            #    Es exacto y no depende del monto, así que va primero.
+            ref = str(pago.get("external_reference") or "")
+            if ref.startswith("cuota:"):
+                try:
+                    cid = int(ref.split(":", 1)[1])
+                except ValueError:
+                    cid = None
+                if cid:
+                    candidato = db.obtener_cliente(cid)
+                    if candidato is None:
+                        resultado = f"referencia {ref} apunta a una cuota que no existe"
+                    elif candidato["estado"] == "pagado":
+                        resultado = f"cuota {cid} ya estaba pagada, no se toca"
+                    else:
+                        cliente = candidato
+                        via = "referencia"
+
+            # 2) Transferencia directa: matcheo por el monto con centavos únicos.
+            if cliente is None and not resultado.startswith(("referencia", "cuota")):
+                cliente = db.buscar_pendiente_por_monto(monto)
+                via = "monto"
+
             if cliente:
                 db.marcar_pagado(cliente["id"], mp_payment_id=str(data_id))
-                resultado = f"pagado cliente {cliente['id']}"
-            else:
+                resultado = f"pagado cliente {cliente['id']} (por {via})"
+
+                # Aprender del pago: qué comisión cobró MP realmente y si el
+                # neto alcanzó a cubrir la cuota. Con eso el próximo cobro se
+                # calcula solo, sin depender de tablas publicadas.
+                medido = mp.costo_real_del_pago(pago)
+                if medido:
+                    bruto, comision, neto, tasa = medido
+                    try:
+                        db.guardar_config({"recargo_observado": tasa})
+                    except Exception:
+                        pass
+                    esperado = float(cliente["monto_esperado"])
+                    faltante = round(esperado - neto, 2)
+                    resultado += f" | comision real {tasa}% (${comision}), neto ${neto}"
+                    if faltante > 0.5:
+                        # El neto no llegó a cubrir la cuota: queda anotado en
+                        # la propia cuota para que se vea en el panel.
+                        resultado += f" | QUEDO CORTO ${faltante}"
+                        try:
+                            db.anotar_en_cuota(
+                                cliente["id"],
+                                f"Neto recibido ${neto} — faltaron ${faltante} "
+                                f"(comisión real {tasa}%)",
+                            )
+                        except Exception:
+                            pass
+            elif not resultado.startswith(("referencia", "cuota")):
                 resultado = f"pago aprobado sin cuota que matchee (monto {monto})"
         else:
             resultado = f"pago status={pago.get('status')}"

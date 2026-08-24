@@ -44,6 +44,39 @@
       <input type="number" name="max_cuotas" value="{{ config.max_cuotas }}" min="1" max="24">
       <small>Tope de cuotas del saldo</small>
     </label>
+    <label class="check-linea">
+      <input type="checkbox" name="mp_checkout_activo" value="si"
+             {% if config.mp_checkout_activo %}checked{% endif %}>
+      Ofrecer pago con Mercado Pago
+    </label>
+    <label class="check-linea">
+      <input type="checkbox" name="recargo_auto" value="si"
+             {% if config.recargo_auto %}checked{% endif %}>
+      Ajustar la comisión sola con cada pago
+    </label>
+    <label>Comisión estimada (%)
+      <input type="text" name="recargo_mp" value="{{ config.recargo_mp }}" inputmode="decimal">
+      <small>Solo se usa hasta el primer cobro real</small>
+    </label>
+    <label>Margen de seguridad (%)
+      <input type="text" name="recargo_margen" value="{{ config.recargo_margen }}" inputmode="decimal">
+      <small>Colchón sobre la comisión medida</small>
+    </label>
+    <div class="medicion">
+      {% if config.recargo_observado %}
+        Último pago real: Mercado Pago cobró <b>{{ config.recargo_observado }}%</b>.
+        {% if config.recargo_auto %}
+          Se está cobrando <b>{{ (config.recargo_observado + config.recargo_margen)|round(2) }}%</b>
+          al cliente (medido + margen).
+        {% else %}
+          El ajuste automático está apagado, se cobra el {{ config.recargo_mp }}% fijo.
+        {% endif %}
+      {% else %}
+        Todavía no hubo ningún cobro con Mercado Pago. Hasta el primero se usa
+        la comisión estimada de arriba; después se ajusta sola con lo que MP
+        descuente de verdad.
+      {% endif %}
+    </div>
     <div class="config-submit">
       <button type="submit" class="boton">Guardar montos</button>
       <small>Afecta solo a los planes nuevos. Los ya creados no cambian.</small>
