@@ -1,6 +1,7 @@
 import os
 import random
 import sqlite3
+import uuid
 from datetime import datetime
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
@@ -27,6 +28,11 @@ def get_db():
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
+
+
+def _ph():
+    """Placeholder de parámetros: %s en Postgres, ? en SQLite."""
+    return "%s" if USANDO_POSTGRES else "?"
 
 
 def _run(conn, sql_sqlite, sql_pg, params=()):
@@ -65,6 +71,14 @@ def init_db():
             )
             """
         )
+        # Migración: columnas para la calculadora de cuotas (planes). Se
+        # agregan sobre una tabla que puede ya existir en producción.
+        for col_sql in (
+            "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS fecha_vencimiento TEXT",
+            "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS concepto TEXT",
+            "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS plan_token TEXT",
+        ):
+            conn.cursor().execute(col_sql)
     else:
         conn.execute(
             """
@@ -78,7 +92,10 @@ def init_db():
                 mp_payment_id TEXT,
                 fecha_pago TEXT,
                 fecha_creacion TEXT NOT NULL,
-                notas TEXT
+                notas TEXT,
+                fecha_vencimiento TEXT,
+                concepto TEXT,
+                plan_token TEXT
             )
             """
         )
@@ -92,6 +109,11 @@ def init_db():
             )
             """
         )
+        # Migración para bases SQLite creadas antes de agregar estas columnas.
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(clientes)").fetchall()}
+        for col in ("fecha_vencimiento", "concepto", "plan_token"):
+            if col not in cols:
+                conn.execute(f"ALTER TABLE clientes ADD COLUMN {col} TEXT")
     conn.commit()
     conn.close()
 
@@ -146,6 +168,70 @@ def crear_cliente(nombre, evento, telefono, monto_base, notas=""):
     conn.commit()
     conn.close()
     return cliente_id, monto
+
+
+def crear_plan(nombre, telefono, evento, cuotas, notas=""):
+    """Crea un plan de cuotas: una fila en `clientes` por cada cuota
+    (seña incluida), todas con el mismo plan_token y cada una con su propio
+    monto único (para poder matchear la transferencia), concepto y
+    fecha_vencimiento. `cuotas` es la lista que devuelve
+    planes.calcular_plan(): [{concepto, monto, fecha_vencimiento}, ...].
+    Devuelve (plan_token, [cliente_id, ...])."""
+    plan_token = uuid.uuid4().hex
+    fecha_creacion = datetime.utcnow().isoformat()
+    conn = get_db()
+    ids = []
+    try:
+        for cuota in cuotas:
+            monto = generar_monto_unico(conn, cuota["monto"])
+            fecha_venc = cuota["fecha_vencimiento"]
+            fecha_venc_str = fecha_venc.isoformat() if hasattr(fecha_venc, "isoformat") else str(fecha_venc)
+            if USANDO_POSTGRES:
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    INSERT INTO clientes
+                        (nombre, evento, telefono, monto_esperado, estado, fecha_creacion,
+                         notas, fecha_vencimiento, concepto, plan_token)
+                    VALUES (%s, %s, %s, %s, 'pendiente', %s, %s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (nombre, evento, telefono, monto, fecha_creacion, notas,
+                     fecha_venc_str, cuota["concepto"], plan_token),
+                )
+                cliente_id = cur.fetchone()["id"]
+            else:
+                cur = conn.execute(
+                    """
+                    INSERT INTO clientes
+                        (nombre, evento, telefono, monto_esperado, estado, fecha_creacion,
+                         notas, fecha_vencimiento, concepto, plan_token)
+                    VALUES (?, ?, ?, ?, 'pendiente', ?, ?, ?, ?, ?)
+                    """,
+                    (nombre, evento, telefono, monto, fecha_creacion, notas,
+                     fecha_venc_str, cuota["concepto"], plan_token),
+                )
+                cliente_id = cur.lastrowid
+            ids.append(cliente_id)
+        conn.commit()
+    finally:
+        conn.close()
+    return plan_token, ids
+
+
+def obtener_plan(plan_token):
+    """Devuelve todas las cuotas (filas de `clientes`) que pertenecen a un
+    plan, ordenadas por fecha de vencimiento."""
+    conn = get_db()
+    cur = _run(
+        conn,
+        "SELECT * FROM clientes WHERE plan_token = ? ORDER BY fecha_vencimiento ASC, id ASC",
+        "SELECT * FROM clientes WHERE plan_token = %s ORDER BY fecha_vencimiento ASC, id ASC",
+        (plan_token,),
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return rows
 
 
 def listar_clientes():
