@@ -108,7 +108,7 @@ def _respuesta_plan(plan_token, incluir_token=True):
 # Panel de gestión (privado)
 # --------------------------------------------------------------------------
 
-@app.route("/login", methods=["GET", "POST"])
+@app.route("/panel/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         usuario = request.form.get("usuario", "")
@@ -120,13 +120,13 @@ def login():
     return render_template("login.html")
 
 
-@app.route("/logout")
+@app.route("/panel/logout")
 def logout():
     session.pop("logueado", None)
     return redirect(url_for("login"))
 
 
-@app.route("/")
+@app.route("/panel")
 @login_requerido
 def dashboard():
     """Panel de gestión: planes agrupados + cobros sueltos + configuración."""
@@ -178,7 +178,7 @@ def dashboard():
     )
 
 
-@app.route("/config", methods=["POST"])
+@app.route("/panel/config", methods=["POST"])
 @login_requerido
 def guardar_configuracion():
     nuevos = {}
@@ -196,7 +196,7 @@ def guardar_configuracion():
     return redirect(url_for("dashboard"))
 
 
-@app.route("/planes/nuevo", methods=["POST"])
+@app.route("/panel/planes/nuevo", methods=["POST"])
 @login_requerido
 def crear_plan_manual():
     """Crea un plan a mano desde el panel, por si falla el flujo del cliente."""
@@ -224,7 +224,7 @@ def crear_plan_manual():
     return redirect(url_for("dashboard"))
 
 
-@app.route("/planes/<token>/eliminar", methods=["POST"])
+@app.route("/panel/planes/<token>/eliminar", methods=["POST"])
 @login_requerido
 def eliminar_plan_admin(token):
     db.eliminar_plan(token)
@@ -232,7 +232,7 @@ def eliminar_plan_admin(token):
     return redirect(url_for("dashboard"))
 
 
-@app.route("/clientes/nuevo", methods=["GET", "POST"])
+@app.route("/panel/clientes/nuevo", methods=["GET", "POST"])
 @login_requerido
 def nuevo_cliente():
     if request.method == "POST":
@@ -253,7 +253,7 @@ def nuevo_cliente():
     return render_template("nuevo.html")
 
 
-@app.route("/clientes/<int:cliente_id>", methods=["GET", "POST"])
+@app.route("/panel/clientes/<int:cliente_id>", methods=["GET", "POST"])
 @login_requerido
 def detalle_cliente(cliente_id):
     cliente = db.obtener_cliente(cliente_id)
@@ -281,7 +281,7 @@ def detalle_cliente(cliente_id):
     return render_template("detalle.html", c=cliente, alias=ALIAS_COBRO, cvu=CVU_COBRO)
 
 
-@app.route("/clientes/<int:cliente_id>/marcar-pagado", methods=["POST"])
+@app.route("/panel/clientes/<int:cliente_id>/marcar-pagado", methods=["POST"])
 @login_requerido
 def marcar_pagado_manual(cliente_id):
     db.marcar_pagado(cliente_id, mp_payment_id="manual")
@@ -289,7 +289,7 @@ def marcar_pagado_manual(cliente_id):
     return redirect(request.referrer or url_for("dashboard"))
 
 
-@app.route("/clientes/<int:cliente_id>/eliminar", methods=["POST"])
+@app.route("/panel/clientes/<int:cliente_id>/eliminar", methods=["POST"])
 @login_requerido
 def eliminar_cuota_admin(cliente_id):
     db.eliminar_cuota(cliente_id)
@@ -297,7 +297,7 @@ def eliminar_cuota_admin(cliente_id):
     return redirect(request.referrer or url_for("dashboard"))
 
 
-@app.route("/sincronizar", methods=["POST"])
+@app.route("/panel/sincronizar", methods=["POST"])
 @login_requerido
 def sincronizar():
     """Fallback: busca pagos recientes aprobados en Mercado Pago y los
@@ -327,10 +327,17 @@ def sincronizar():
 # Calculadora pública + área del cliente
 # --------------------------------------------------------------------------
 
-@app.route("/cuotas")
+@app.route("/")
 def calculadora_cuotas():
-    """Página pública de la calculadora de cuotas para clientes."""
+    """Página pública de la calculadora de cuotas: es la raíz del subdominio."""
     return render_template("calculadora.html", alias=ALIAS_COBRO, cvu=CVU_COBRO)
+
+
+@app.route("/cuotas")
+def calculadora_cuotas_legacy():
+    """La calculadora vivía acá antes. Se mantiene redirigiendo para no
+    romper links ya compartidos."""
+    return redirect(url_for("calculadora_cuotas"), code=301)
 
 
 @app.route("/api/planes/opciones", methods=["POST"])
