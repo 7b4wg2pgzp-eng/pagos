@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Panel{% endblock %}
+{% block content %}
+
+<div class="acciones">
+  <a class="boton" href="{{ url_for('nuevo_cliente') }}">+ Nuevo cliente</a>
+  <form method="post" action="{{ url_for('sincronizar') }}" style="display:inline">
+    <button type="submit" class="boton secundario">Sincronizar con Mercado Pago</button>
+  </form>
+</div>
+
+<p class="alias-info">Alias / CVU para que transfieran: <strong>{{ alias }}</strong></p>
+
+<h2>Pendientes ({{ pendientes|length }})</h2>
+{% if not pendientes %}
+  <p class="vacio">No hay pagos pendientes.</p>
+{% else %}
+<table>
+  <thead><tr><th>Cliente</th><th>Evento</th><th>Monto a transferir</th><th></th></tr></thead>
+  <tbody>
+    {% for c in pendientes %}
+    <tr>
+      <td>{{ c.nombre }}</td>
+      <td>{{ c.evento or '-' }}</td>
+      <td class="monto">${{ '%.2f'|format(c.monto_esperado) }}</td>
+      <td><a href="{{ url_for('detalle_cliente', cliente_id=c.id) }}">Ver</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Pagados ({{ pagados|length }})</h2>
+{% if not pagados %}
+  <p class="vacio">Todavía no hay pagos confirmados.</p>
+{% else %}
+<table>
+  <thead><tr><th>Cliente</th><th>Evento</th><th>Monto</th><th>Fecha de pago</th></tr></thead>
+  <tbody>
+    {% for c in pagados %}
+    <tr class="pagado">
+      <td>{{ c.nombre }}</td>
+      <td>{{ c.evento or '-' }}</td>
+      <td class="monto">${{ '%.2f'|format(c.monto_esperado) }}</td>
+      <td>{{ c.fecha_pago[:16] if c.fecha_pago else '-' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ c.nombre }}{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>{{ c.nombre }}</h1>
+  <p class="estado estado-{{ c.estado }}">{{ 'Pagado' if c.estado == 'pagado' else 'Pendiente' }}</p>
+
+  <dl>
+    <dt>Evento</dt><dd>{{ c.evento or '-' }}</dd>
+    <dt>Teléfono</dt><dd>{{ c.telefono or '-' }}</dd>
+    <dt>Monto exacto a transferir</dt><dd class="monto">${{ '%.2f'|format(c.monto_esperado) }}</dd>
+    <dt>Alias / CVU</dt><dd>{{ alias }}</dd>
+    <dt>Notas</dt><dd>{{ c.notas or '-' }}</dd>
+    {% if c.estado == 'pagado' %}
+    <dt>Fecha de pago</dt><dd>{{ c.fecha_pago }}</dd>
+    <dt>ID de pago MP</dt><dd>{{ c.mp_payment_id }}</dd>
+    {% endif %}
+  </dl>
+
+  <p class="ayuda">Importante: que transfiera el monto exacto, con los centavos incluidos.
+  Así el sistema sabe que ese pago es tuyo y no de otro cliente.</p>
+
+  {% if c.estado == 'pendiente' %}
+  <form method="post" action="{{ url_for('marcar_pagado_manual', cliente_id=c.id) }}">
+    <button type="submit" class="boton secundario">Marcar como pagado manualmente</button>
+  </form>
+  {% endif %}
+
+  <a href="{{ url_for('dashboard') }}">&larr; Volver</a>
+</div>
+{% endblock %}

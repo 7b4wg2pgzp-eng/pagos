@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Ingresar{% endblock %}
+{% block content %}
+<form class="card form-angosto" method="post">
+  <h1>Ingresar</h1>
+  <label>Usuario</label>
+  <input type="text" name="usuario" autocomplete="username" required>
+  <label>Clave</label>
+  <input type="password" name="clave" autocomplete="current-password" required>
+  <button type="submit">Entrar</button>
+</form>
+{% endblock %}
