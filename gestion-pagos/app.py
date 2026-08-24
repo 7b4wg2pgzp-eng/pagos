@@ -77,6 +77,22 @@ def _monto(valor, defecto=0.0):
         return defecto
 
 
+def _validar_credenciales(usuario, clave, excepto_token=None, clave_obligatoria=True):
+    """Reglas del usuario y la clave del cliente. Devuelve un mensaje de error,
+    o None si está todo bien. Lo usan tanto la calculadora pública como el
+    panel, así los dos caminos piden exactamente lo mismo."""
+    if len(usuario) < 4:
+        return "El usuario tiene que tener al menos 4 caracteres"
+    if not usuario.replace(".", "").replace("_", "").replace("-", "").isalnum():
+        return "El usuario solo puede tener letras, números, punto, guion y guion bajo"
+    if clave or clave_obligatoria:
+        if len(clave) < 6:
+            return "La contraseña tiene que tener al menos 6 caracteres"
+    if db.usuario_existe(usuario, excepto_token=excepto_token):
+        return "Ese usuario ya está en uso, probá con otro"
+    return None
+
+
 def _cuota_publica(row):
     """Recorta una fila de `clientes` a los campos que el cliente puede ver."""
     return {
@@ -225,6 +241,16 @@ def crear_plan_manual():
         flash("Completá la fecha del evento y una cantidad de cuotas válida")
         return redirect(url_for("dashboard"))
 
+    # Usuario y clave son opcionales acá: si no los ponés, el plan queda sin
+    # acceso para el cliente y se los podés cargar después desde el panel.
+    usuario = request.form.get("usuario", "").strip()
+    clave = request.form.get("clave", "")
+    if usuario or clave:
+        error = _validar_credenciales(usuario, clave)
+        if error:
+            flash(error)
+            return redirect(url_for("dashboard"))
+
     cuotas = planes.calcular_plan(fecha_evento, cantidad)
     plan_token, _ = db.crear_plan(
         nombre=nombre,
@@ -233,8 +259,50 @@ def crear_plan_manual():
         cuotas=cuotas,
         notas="Creado a mano desde el panel",
     )
-    db.registrar_plan(plan_token, nombre, None, None, fecha_evento.isoformat(), cantidad)
-    flash(f"Plan creado para {nombre} ({len(cuotas)} cuotas)")
+    db.registrar_plan(
+        plan_token,
+        nombre,
+        usuario or None,
+        generate_password_hash(clave) if usuario else None,
+        fecha_evento.isoformat(),
+        cantidad,
+    )
+    if usuario:
+        flash(f"Plan creado para {nombre} ({len(cuotas)} cuotas). Ya puede entrar con «{usuario}».")
+    else:
+        flash(f"Plan creado para {nombre} ({len(cuotas)} cuotas), sin acceso de cliente.")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/panel/planes/<token>/credenciales", methods=["POST"])
+@login_requerido
+def credenciales_plan(token):
+    """Asigna o cambia el usuario y la clave de un plan ya existente — para los
+    creados a mano, o cuando el cliente se olvidó la contraseña."""
+    cab = db.obtener_cabecera_plan(token)
+    if not cab:
+        flash("Plan no encontrado")
+        return redirect(url_for("dashboard"))
+
+    usuario = request.form.get("usuario", "").strip()
+    clave = request.form.get("clave", "")
+
+    # Si el plan ya tenía clave, dejar el campo vacío significa "no la cambies".
+    ya_tenia_clave = bool(cab["password_hash"])
+    error = _validar_credenciales(
+        usuario, clave, excepto_token=token, clave_obligatoria=not ya_tenia_clave
+    )
+    if error:
+        flash(error)
+        return redirect(url_for("dashboard"))
+
+    db.actualizar_credenciales_plan(
+        token, usuario, generate_password_hash(clave) if clave else None
+    )
+    if clave:
+        flash(f"Acceso guardado: usuario «{usuario}» con clave nueva.")
+    else:
+        flash(f"Usuario cambiado a «{usuario}». La clave sigue siendo la misma.")
     return redirect(url_for("dashboard"))
 
 
@@ -453,14 +521,9 @@ def api_crear_plan():
         return jsonify({"error": "Elegí la fecha de tu evento"}), 400
     if fecha_evento < date.today():
         return jsonify({"error": "Esa fecha ya pasó"}), 400
-    if len(usuario) < 4:
-        return jsonify({"error": "El usuario tiene que tener al menos 4 caracteres"}), 400
-    if not usuario.replace(".", "").replace("_", "").replace("-", "").isalnum():
-        return jsonify({"error": "El usuario solo puede tener letras, números, punto, guion y guion bajo"}), 400
-    if len(clave) < 6:
-        return jsonify({"error": "La contraseña tiene que tener al menos 6 caracteres"}), 400
-    if db.usuario_existe(usuario):
-        return jsonify({"error": "Ese usuario ya está en uso, probá con otro"}), 409
+    error = _validar_credenciales(usuario, clave)
+    if error:
+        return jsonify({"error": error}), 409 if "ya está en uso" in error else 400
 
     validas = planes.cuotas_disponibles(fecha_evento)
     if cuotas_saldo not in validas:

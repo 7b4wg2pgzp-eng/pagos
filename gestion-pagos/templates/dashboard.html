@@ -65,9 +65,17 @@
       <input type="number" name="cuotas_saldo" min="1" max="{{ config.max_cuotas }}" value="3">
       <small>Sin contar la seña. 1 = contado</small>
     </label>
+    <label>Usuario del cliente
+      <input type="text" name="usuario" autocomplete="off" placeholder="opcional">
+      <small>Mínimo 4 caracteres. Letras, números, . _ -</small>
+    </label>
+    <label>Clave del cliente
+      <input type="text" name="clave" autocomplete="off" placeholder="opcional">
+      <small>Mínimo 6 caracteres</small>
+    </label>
     <div class="config-submit">
       <button type="submit" class="boton">Crear plan</button>
-      <small>Se crea sin usuario. El cliente no va a poder entrar solo.</small>
+      <small>Si dejás usuario y clave vacíos, se los cargás después.</small>
     </div>
   </form>
 </details>
@@ -120,6 +128,26 @@
       {% endfor %}
     </tbody>
   </table>
+
+  <details class="acceso-cliente">
+    <summary>{% if p.usuario %}Cambiar el acceso del cliente{% else %}Darle acceso al cliente{% endif %}</summary>
+    <form method="post" action="{{ url_for('credenciales_plan', token=p.token) }}" class="grid-config">
+      <label>Usuario
+        <input type="text" name="usuario" value="{{ p.usuario or '' }}" autocomplete="off" required>
+        <small>Mínimo 4 caracteres. Letras, números, . _ -</small>
+      </label>
+      <label>Clave
+        <input type="text" name="clave" autocomplete="off"
+               {% if not p.usuario %}required{% endif %}
+               placeholder="{% if p.usuario %}dejar vacío para no cambiarla{% else %}mínimo 6 caracteres{% endif %}">
+        <small>{% if p.usuario %}Solo completala si querés cambiarla{% else %}Mínimo 6 caracteres{% endif %}</small>
+      </label>
+      <div class="config-submit">
+        <button type="submit" class="boton">Guardar acceso</button>
+        <small>Con esto entra en <b>{{ request.host_url }}</b></small>
+      </div>
+    </form>
+  </details>
 
   <form method="post" action="{{ url_for('eliminar_plan_admin', token=p.token) }}"
         onsubmit="return confirm('¿Eliminar el plan completo de {{ p.nombre }}? Se borran sus {{ p.total_cuotas }} cuotas y su acceso. No se puede deshacer.');">

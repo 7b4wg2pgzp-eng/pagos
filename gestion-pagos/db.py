@@ -288,17 +288,51 @@ def crear_cliente(nombre, evento, telefono, monto_base, notas=""):
     return cliente_id, monto
 
 
-def usuario_existe(usuario):
+def usuario_existe(usuario, excepto_token=None):
+    """¿Ya hay otro plan con ese usuario? `excepto_token` deja fuera al propio
+    plan, para poder guardarle de nuevo el mismo usuario sin falso choque."""
     conn = get_db()
-    cur = _run(
-        conn,
-        "SELECT 1 FROM planes WHERE LOWER(usuario) = ?",
-        "SELECT 1 FROM planes WHERE LOWER(usuario) = %s",
-        (usuario.strip().lower(),),
-    )
+    if excepto_token:
+        cur = _run(
+            conn,
+            "SELECT 1 FROM planes WHERE LOWER(usuario) = ? AND plan_token <> ?",
+            "SELECT 1 FROM planes WHERE LOWER(usuario) = %s AND plan_token <> %s",
+            (usuario.strip().lower(), excepto_token),
+        )
+    else:
+        cur = _run(
+            conn,
+            "SELECT 1 FROM planes WHERE LOWER(usuario) = ?",
+            "SELECT 1 FROM planes WHERE LOWER(usuario) = %s",
+            (usuario.strip().lower(),),
+        )
     existe = cur.fetchone() is not None
     conn.close()
     return existe
+
+
+def actualizar_credenciales_plan(plan_token, usuario, password_hash):
+    """Asigna o cambia el usuario y la clave de un plan ya creado.
+
+    Si password_hash es None, se conserva la clave que ya tenía (sirve para
+    cambiar solo el nombre de usuario)."""
+    conn = get_db()
+    if password_hash is None:
+        _run(
+            conn,
+            "UPDATE planes SET usuario = ? WHERE plan_token = ?",
+            "UPDATE planes SET usuario = %s WHERE plan_token = %s",
+            (usuario, plan_token),
+        )
+    else:
+        _run(
+            conn,
+            "UPDATE planes SET usuario = ?, password_hash = ? WHERE plan_token = ?",
+            "UPDATE planes SET usuario = %s, password_hash = %s WHERE plan_token = %s",
+            (usuario, password_hash, plan_token),
+        )
+    conn.commit()
+    conn.close()
 
 
 def registrar_plan(plan_token, nombre, usuario, password_hash, fecha_evento, cantidad_cuotas):
