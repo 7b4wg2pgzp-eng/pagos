@@ -79,6 +79,27 @@ def init_db():
             "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS plan_token TEXT",
         ):
             conn.cursor().execute(col_sql)
+        conn.cursor().execute(
+            """
+            CREATE TABLE IF NOT EXISTS planes (
+                plan_token TEXT PRIMARY KEY,
+                nombre TEXT,
+                usuario TEXT UNIQUE,
+                password_hash TEXT,
+                fecha_evento TEXT,
+                cantidad_cuotas INTEGER,
+                fecha_creacion TEXT NOT NULL
+            )
+            """
+        )
+        conn.cursor().execute(
+            """
+            CREATE TABLE IF NOT EXISTS config (
+                clave TEXT PRIMARY KEY,
+                valor TEXT NOT NULL
+            )
+            """
+        )
     else:
         conn.execute(
             """
@@ -114,6 +135,75 @@ def init_db():
         for col in ("fecha_vencimiento", "concepto", "plan_token"):
             if col not in cols:
                 conn.execute(f"ALTER TABLE clientes ADD COLUMN {col} TEXT")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS planes (
+                plan_token TEXT PRIMARY KEY,
+                nombre TEXT,
+                usuario TEXT UNIQUE,
+                password_hash TEXT,
+                fecha_evento TEXT,
+                cantidad_cuotas INTEGER,
+                fecha_creacion TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS config (
+                clave TEXT PRIMARY KEY,
+                valor TEXT NOT NULL
+            )
+            """
+        )
+    conn.commit()
+    conn.close()
+
+
+# --------------------------------------------------------------------------
+# Configuración editable desde el panel (montos del presupuesto)
+# --------------------------------------------------------------------------
+
+CONFIG_DEFECTO = {
+    "presupuesto_base": "500000",
+    "presupuesto_financiado": "550000",
+    "sena": "250000",
+}
+
+
+def leer_config():
+    """Devuelve el dict de configuración, completando con los valores por
+    defecto las claves que todavía no se hayan guardado."""
+    conf = dict(CONFIG_DEFECTO)
+    try:
+        conn = get_db()
+        cur = _run(conn, "SELECT clave, valor FROM config", "SELECT clave, valor FROM config")
+        for row in cur.fetchall():
+            clave = row["clave"] if not isinstance(row, tuple) else row[0]
+            valor = row["valor"] if not isinstance(row, tuple) else row[1]
+            if clave in conf:
+                conf[clave] = valor
+        conn.close()
+    except Exception:
+        # Si la tabla todavía no existe (primer arranque), usamos los defaults.
+        pass
+    return {k: int(float(v)) for k, v in conf.items()}
+
+
+def guardar_config(nuevos):
+    """Guarda (upsert) las claves de configuración recibidas."""
+    conn = get_db()
+    for clave, valor in nuevos.items():
+        if clave not in CONFIG_DEFECTO:
+            continue
+        _run(
+            conn,
+            "INSERT INTO config (clave, valor) VALUES (?, ?) "
+            "ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor",
+            "INSERT INTO config (clave, valor) VALUES (%s, %s) "
+            "ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor",
+            (clave, str(int(valor))),
+        )
     conn.commit()
     conn.close()
 
@@ -168,6 +258,125 @@ def crear_cliente(nombre, evento, telefono, monto_base, notas=""):
     conn.commit()
     conn.close()
     return cliente_id, monto
+
+
+def usuario_existe(usuario):
+    conn = get_db()
+    cur = _run(
+        conn,
+        "SELECT 1 FROM planes WHERE LOWER(usuario) = ?",
+        "SELECT 1 FROM planes WHERE LOWER(usuario) = %s",
+        (usuario.strip().lower(),),
+    )
+    existe = cur.fetchone() is not None
+    conn.close()
+    return existe
+
+
+def registrar_plan(plan_token, nombre, usuario, password_hash, fecha_evento, cantidad_cuotas):
+    """Guarda la cabecera del plan con las credenciales del cliente."""
+    conn = get_db()
+    fecha = datetime.utcnow().isoformat()
+    _run(
+        conn,
+        """INSERT INTO planes (plan_token, nombre, usuario, password_hash,
+                               fecha_evento, cantidad_cuotas, fecha_creacion)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO planes (plan_token, nombre, usuario, password_hash,
+                               fecha_evento, cantidad_cuotas, fecha_creacion)
+           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+        (plan_token, nombre, (usuario or "").strip() or None, password_hash,
+         fecha_evento, cantidad_cuotas, fecha),
+    )
+    conn.commit()
+    conn.close()
+
+
+def obtener_plan_por_usuario(usuario):
+    conn = get_db()
+    cur = _run(
+        conn,
+        "SELECT * FROM planes WHERE LOWER(usuario) = ?",
+        "SELECT * FROM planes WHERE LOWER(usuario) = %s",
+        (usuario.strip().lower(),),
+    )
+    row = cur.fetchone()
+    conn.close()
+    return row
+
+
+def obtener_cabecera_plan(plan_token):
+    conn = get_db()
+    cur = _run(
+        conn,
+        "SELECT * FROM planes WHERE plan_token = ?",
+        "SELECT * FROM planes WHERE plan_token = %s",
+        (plan_token,),
+    )
+    row = cur.fetchone()
+    conn.close()
+    return row
+
+
+def listar_planes():
+    """Cabeceras de todos los planes, más recientes primero."""
+    conn = get_db()
+    cur = _run(
+        conn,
+        "SELECT * FROM planes ORDER BY fecha_creacion DESC",
+        "SELECT * FROM planes ORDER BY fecha_creacion DESC",
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+def actualizar_cuota(cliente_id, nombre, concepto, monto, fecha_vencimiento, estado, notas):
+    """Edición manual de una cuota desde el panel."""
+    conn = get_db()
+    fecha_pago = datetime.utcnow().isoformat() if estado == "pagado" else None
+    if estado == "pagado":
+        _run(
+            conn,
+            """UPDATE clientes SET nombre = ?, concepto = ?, monto_esperado = ?,
+                   fecha_vencimiento = ?, estado = ?, notas = ?,
+                   fecha_pago = COALESCE(fecha_pago, ?) WHERE id = ?""",
+            """UPDATE clientes SET nombre = %s, concepto = %s, monto_esperado = %s,
+                   fecha_vencimiento = %s, estado = %s, notas = %s,
+                   fecha_pago = COALESCE(fecha_pago, %s) WHERE id = %s""",
+            (nombre, concepto, monto, fecha_vencimiento, estado, notas, fecha_pago, cliente_id),
+        )
+    else:
+        _run(
+            conn,
+            """UPDATE clientes SET nombre = ?, concepto = ?, monto_esperado = ?,
+                   fecha_vencimiento = ?, estado = ?, notas = ?,
+                   fecha_pago = NULL, mp_payment_id = NULL WHERE id = ?""",
+            """UPDATE clientes SET nombre = %s, concepto = %s, monto_esperado = %s,
+                   fecha_vencimiento = %s, estado = %s, notas = %s,
+                   fecha_pago = NULL, mp_payment_id = NULL WHERE id = %s""",
+            (nombre, concepto, monto, fecha_vencimiento, estado, notas, cliente_id),
+        )
+    conn.commit()
+    conn.close()
+
+
+def eliminar_cuota(cliente_id):
+    conn = get_db()
+    _run(conn, "DELETE FROM clientes WHERE id = ?", "DELETE FROM clientes WHERE id = %s", (cliente_id,))
+    conn.commit()
+    conn.close()
+
+
+def eliminar_plan(plan_token):
+    """Borra el plan entero: sus cuotas y su cabecera/credenciales."""
+    conn = get_db()
+    _run(conn, "DELETE FROM clientes WHERE plan_token = ?",
+         "DELETE FROM clientes WHERE plan_token = %s", (plan_token,))
+    _run(conn, "DELETE FROM planes WHERE plan_token = ?",
+         "DELETE FROM planes WHERE plan_token = %s", (plan_token,))
+    conn.commit()
+    conn.close()
 
 
 def crear_plan(nombre, telefono, evento, cuotas, notas=""):
