@@ -12,10 +12,20 @@ Reglas de negocio:
 from datetime import date
 import calendar
 
+import db
+
+# Valores por defecto. Los reales se leen de la tabla `config`, editable
+# desde el panel de gestión (db.leer_config()).
 PRESUPUESTO_BASE = 500_000
 PRESUPUESTO_FINANCIADO = 550_000
 SENA = 250_000
 MAX_CUOTAS = 12
+
+
+def montos():
+    """Lee los montos vigentes desde la configuración guardada."""
+    c = db.leer_config()
+    return c["presupuesto_base"], c["presupuesto_financiado"], c["sena"]
 
 
 def restar_meses(fecha, n):
@@ -61,25 +71,27 @@ def calcular_plan(fecha_evento, cantidad_cuotas, hoy=None):
     hoy = hoy or date.today()
     cantidad_cuotas = int(cantidad_cuotas)
 
+    base, financiado, sena = montos()
+
     if cantidad_cuotas <= 1:
         return [
-            {"concepto": "Pago único", "monto": PRESUPUESTO_BASE, "fecha_vencimiento": hoy}
+            {"concepto": "Pago único", "monto": base, "fecha_vencimiento": hoy}
         ]
 
-    total = PRESUPUESTO_BASE if cantidad_cuotas == 2 else PRESUPUESTO_FINANCIADO
-    resto = total - SENA
+    total = base if cantidad_cuotas == 2 else financiado
+    resto = total - sena
     n_cuotas = cantidad_cuotas - 1  # sin contar la seña
 
     limite = restar_meses(fecha_evento, 1)
     fechas = [restar_meses(limite, n_cuotas - 1 - i) for i in range(n_cuotas)]
 
     monto_cada_una = round(resto / n_cuotas)
-    montos = [monto_cada_una] * n_cuotas
-    diferencia = resto - sum(montos)
-    montos[-1] += diferencia
+    montos_cuotas = [monto_cada_una] * n_cuotas
+    diferencia = resto - sum(montos_cuotas)
+    montos_cuotas[-1] += diferencia
 
-    plan = [{"concepto": "Seña", "monto": SENA, "fecha_vencimiento": hoy}]
-    for i, (fecha, monto) in enumerate(zip(fechas, montos), start=1):
+    plan = [{"concepto": "Seña", "monto": sena, "fecha_vencimiento": hoy}]
+    for i, (fecha, monto) in enumerate(zip(fechas, montos_cuotas), start=1):
         plan.append(
             {
                 "concepto": f"Cuota {i}/{n_cuotas}",
