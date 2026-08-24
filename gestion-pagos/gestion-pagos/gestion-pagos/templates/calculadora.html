@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plan de cuotas — Nico Vásquez DJ'S</title>
+<meta name="theme-color" content="#07060a">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:wght@500;600&family=Manrope:wght@400;500;700&family=Playfair+Display:ital,wght@1,500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --noir:#040306;
+    --noir-2:#0b0910;
+    --bone:#f4efe4;
+    --gold:#d9a441;
+    --gold-lit:#f6e0a4;
+    --gold-deep:#8a6118;
+    --line:rgba(217,164,65,.20);
+    --ok:#8fd19e;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(60vw 40vh at 12% -5%, rgba(217,164,65,.16), transparent 60%),
+      radial-gradient(50vw 35vh at 100% 10%, rgba(217,164,65,.10), transparent 55%),
+      var(--noir);
+    color:var(--bone);
+    font-family:'Manrope',system-ui,sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:640px;margin:0 auto;padding:32px 20px 80px;}
+  header.top{text-align:center;margin-bottom:28px;}
+  header.top .word{
+    font-family:'Anton',system-ui,sans-serif;
+    font-size:clamp(28px,7vw,40px);
+    letter-spacing:.03em;
+    color:var(--bone);
+    text-transform:uppercase;
+    margin:0;
+  }
+  header.top .word span{color:var(--gold-lit);}
+  header.top .tag{
+    font-family:'Playfair Display',serif;
+    font-style:italic;
+    color:var(--gold-lit);
+    font-size:15px;
+    margin-top:4px;
+    opacity:.85;
+  }
+  .eyebrow{
+    font-family:'Barlow Condensed',sans-serif;
+    text-transform:uppercase;
+    letter-spacing:.14em;
+    font-size:12.5px;
+    color:var(--gold-lit);
+    font-weight:600;
+  }
+  .card{
+    background:linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.015));
+    border:1px solid var(--line);
+    border-radius:20px;
+    padding:22px 20px;
+    margin-bottom:18px;
+    box-shadow:0 10px 24px rgba(0,0,0,.45);
+  }
+  .card h2{
+    font-family:'Barlow Condensed',sans-serif;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    font-weight:600;
+    font-size:19px;
+    margin:0 0 14px;
+    color:var(--bone);
+  }
+  label{
+    display:block;
+    font-family:'Barlow Condensed',sans-serif;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    font-size:12px;
+    color:rgba(244,239,228,.65);
+    margin:14px 0 6px;
+  }
+  label:first-of-type{margin-top:0;}
+  input[type=text], input[type=tel], input[type=date]{
+    width:100%;
+    background:rgba(0,0,0,.35);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:12px 14px;
+    color:var(--bone);
+    font-family:'Manrope',sans-serif;
+    font-size:15px;
+    outline:none;
+  }
+  input:focus{border-color:var(--gold);}
+  input::-webkit-calendar-picker-indicator{filter:invert(.8) sepia(1) saturate(3) hue-rotate(360deg);}
+  .hint{font-size:12.5px;color:rgba(244,239,228,.5);margin-top:6px;}
+  .error{
+    color:#ffb4b4;
+    font-size:13.5px;
+    margin-top:10px;
+    display:none;
+  }
+  .btn{
+    appearance:none;border:none;cursor:pointer;
+    font-family:'Barlow Condensed',sans-serif;
+    text-transform:uppercase;
+    letter-spacing:.07em;
+    font-weight:600;
+    font-size:15px;
+    border-radius:100px;
+    padding:14px 22px;
+    text-align:center;
+    transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .btn:active{transform:scale(.97);}
+  .btn-primary{
+    width:100%;
+    color:#241705;
+    background:linear-gradient(176deg,#fffaf0 4%,#ffeec4 24%,var(--gold-lit) 55%,var(--gold) 100%);
+    box-shadow:0 16px 40px rgba(217,164,65,.34), inset 0 1px 0 rgba(255,255,255,.6);
+    margin-top:18px;
+  }
+  .btn-primary:disabled{
+    opacity:.4;
+    box-shadow:none;
+    cursor:not-allowed;
+  }
+  .btn-ghost{
+    background:transparent;
+    color:var(--gold-lit);
+    border:1px solid var(--line);
+    padding:9px 16px;
+    font-size:13px;
+  }
+  .opciones{display:flex;flex-direction:column;gap:10px;}
+  .opcion{
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:14px 16px;
+    cursor:pointer;
+    background:rgba(0,0,0,.25);
+    transition:border-color .15s ease, background .15s ease;
+  }
+  .opcion:hover{border-color:rgba(217,164,65,.45);}
+  .opcion.selected{
+    border-color:var(--gold);
+    background:linear-gradient(180deg, rgba(217,164,65,.14), rgba(217,164,65,.04));
+  }
+  .opcion-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;}
+  .opcion-titulo{font-weight:700;font-size:15.5px;color:var(--bone);}
+  .opcion-total{font-family:'Barlow Condensed',sans-serif;font-weight:600;color:var(--gold-lit);font-size:15px;}
+  .opcion-detalle{
+    margin-top:8px;
+    font-size:13px;
+    color:rgba(244,239,228,.62);
+    display:none;
+  }
+  .opcion.selected .opcion-detalle{display:block;}
+  .opcion-detalle .fila{display:flex;justify-content:space-between;padding:3px 0;border-top:1px dashed rgba(217,164,65,.15);}
+  .opcion-detalle .fila:first-child{border-top:none;}
+  .opcion-recargo{
+    display:inline-block;
+    margin-top:6px;
+    font-size:11.5px;
+    color:var(--gold-lit);
+    background:rgba(217,164,65,.12);
+    border:1px solid var(--line);
+    border-radius:100px;
+    padding:2px 10px;
+  }
+
+  .plan-header{text-align:center;margin-bottom:6px;}
+  .plan-header .estado-general{
+    font-family:'Barlow Condensed',sans-serif;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    font-size:13px;
+    color:var(--gold-lit);
+  }
+  .cuota{
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:16px;
+    margin-bottom:12px;
+    background:rgba(0,0,0,.25);
+  }
+  .cuota.pagada{
+    border-color:rgba(143,209,158,.4);
+    background:linear-gradient(180deg, rgba(143,209,158,.10), rgba(143,209,158,.02));
+  }
+  .cuota-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+  .cuota-concepto{font-weight:700;font-size:16px;}
+  .cuota-fecha{font-size:12.5px;color:rgba(244,239,228,.55);margin-top:2px;}
+  .cuota-monto{font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:20px;color:var(--gold-lit);white-space:nowrap;}
+  .badge{
+    display:inline-flex;align-items:center;gap:5px;
+    font-family:'Barlow Condensed',sans-serif;
+    text-transform:uppercase;letter-spacing:.06em;
+    font-size:11.5px;font-weight:600;
+    border-radius:100px;padding:3px 10px;
+    margin-top:8px;
+  }
+  .badge-pendiente{color:var(--gold-lit);background:rgba(217,164,65,.14);border:1px solid var(--line);}
+  .badge-pagada{color:var(--ok);background:rgba(143,209,158,.14);border:1px solid rgba(143,209,158,.35);}
+  .pagar-box{
+    margin-top:12px;
+    padding-top:12px;
+    border-top:1px dashed var(--line);
+    display:none;
+  }
+  .pagar-box.abierto{display:block;}
+  .pagar-fila{
+    display:flex;justify-content:space-between;align-items:center;
+    background:rgba(0,0,0,.3);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:10px 12px;
+    margin-bottom:8px;
+    font-size:14px;
+  }
+  .pagar-fila .val{font-weight:700;color:var(--bone);}
+  .copy-btn{
+    background:transparent;border:1px solid var(--line);color:var(--gold-lit);
+    border-radius:8px;padding:5px 10px;font-size:11.5px;cursor:pointer;
+    font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.05em;
+  }
+  .copy-btn:active{transform:scale(.95);}
+  footer.pie{
+    text-align:center;
+    margin-top:26px;
+    font-size:12px;
+    color:rgba(244,239,228,.4);
+  }
+  .oculto{display:none;}
+  .celebracion{
+    text-align:center;
+    padding:20px;
+    border:1px solid rgba(143,209,158,.4);
+    border-radius:16px;
+    background:linear-gradient(180deg, rgba(143,209,158,.12), rgba(143,209,158,.02));
+    margin-bottom:18px;
+  }
+  .celebracion .titulo{
+    font-family:'Anton',sans-serif;
+    letter-spacing:.02em;
+    color:var(--ok);
+    font-size:20px;
+    text-transform:uppercase;
+  }
+  .spinner{
+    width:16px;height:16px;border-radius:50%;
+    border:2px solid rgba(217,164,65,.25);
+    border-top-color:var(--gold);
+    display:inline-block;
+    animation:spin .8s linear infinite;
+    vertical-align:-3px;
+    margin-right:8px;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <p class="word">Nico Vásquez <span>DJ'S</span></p>
+    <p class="tag">Plan de cuotas para tu evento</p>
+  </header>
+
+  <!-- PASO 1: datos + fecha -->
+  <section id="paso-datos" class="card">
+    <p class="eyebrow">Paso 1</p>
+    <h2>Tu evento</h2>
+
+    <label for="in-nombre">Nombre (opcional)</label>
+    <input type="text" id="in-nombre" placeholder="Tu nombre">
+
+    <label for="in-telefono">Teléfono (opcional)</label>
+    <input type="tel" id="in-telefono" placeholder="Tu WhatsApp">
+
+    <label for="in-fecha">Fecha del evento</label>
+    <input type="date" id="in-fecha">
+    <p class="hint">Presupuesto base: $500.000 · Seña: $250.000. Las cuotas se calculan para que un mes antes de la fiesta ya esté todo abonado.</p>
+    <p class="error" id="err-datos"></p>
+  </section>
+
+  <!-- PASO 2: opciones de cuotas -->
+  <section id="paso-opciones" class="card oculto">
+    <p class="eyebrow">Paso 2</p>
+    <h2>Elegí cómo pagar</h2>
+    <div class="opciones" id="lista-opciones"></div>
+    <button class="btn btn-primary" id="btn-confirmar" disabled>Confirmar plan</button>
+    <p class="error" id="err-confirmar"></p>
+  </section>
+
+  <!-- PASO 3: plan confirmado -->
+  <section id="paso-plan" class="oculto">
+    <div class="celebracion oculto" id="celebracion">
+      <p class="titulo">Evento totalmente abonado</p>
+      <p style="margin:6px 0 0;font-size:13.5px;color:rgba(244,239,228,.7)">Gracias, ya está todo listo de tu lado.</p>
+    </div>
+    <div class="plan-header">
+      <p class="estado-general" id="plan-resumen">Tu plan</p>
+    </div>
+    <div id="lista-cuotas"></div>
+    <div style="text-align:center;margin-top:6px;">
+      <button class="btn btn-ghost" id="btn-nuevo-plan">Empezar un plan nuevo</button>
+    </div>
+  </section>
+
+  <footer class="pie">
+    Los pagos se detectan automáticamente al transferir el monto exacto de cada cuota.
+  </footer>
+</div>
+
+<script>
+(function(){
+  var API = "";
+  var STORAGE_KEY = "nvdjs_plan_token";
+
+  var elDatos = document.getElementById("paso-datos");
+  var elOpciones = document.getElementById("paso-opciones");
+  var elPlan = document.getElementById("paso-plan");
+  var inNombre = document.getElementById("in-nombre");
+  var inTelefono = document.getElementById("in-telefono");
+  var inFecha = document.getElementById("in-fecha");
+  var errDatos = document.getElementById("err-datos");
+  var errConfirmar = document.getElementById("err-confirmar");
+  var listaOpciones = document.getElementById("lista-opciones");
+  var btnConfirmar = document.getElementById("btn-confirmar");
+  var listaCuotas = document.getElementById("lista-cuotas");
+  var planResumen = document.getElementById("plan-resumen");
+  var celebracion = document.getElementById("celebracion");
+  var btnNuevoPlan = document.getElementById("btn-nuevo-plan");
+
+  var seleccion = null;
+  var opcionesCache = [];
+  var pollTimer = null;
+
+  var hoyStr = new Date().toISOString().slice(0, 10);
+  inFecha.setAttribute("min", hoyStr);
+
+  function moneda(n){
+    return "$" + Number(n).toLocaleString("es-AR", {minimumFractionDigits: 0, maximumFractionDigits: 2});
+  }
+
+  function fechaLegible(iso){
+    var p = iso.split("-");
+    var d = new Date(Date.UTC(+p[0], +p[1]-1, +p[2]));
+    return d.toLocaleDateString("es-AR", {day:"numeric", month:"long", year:"numeric", timeZone:"UTC"});
+  }
+
+  function mostrarError(el, msg){
+    el.textContent = msg;
+    el.style.display = msg ? "block" : "none";
+  }
+
+  function pedirOpciones(){
+    var fecha = inFecha.value;
+    mostrarError(errDatos, "");
+    if(!fecha){
+      elOpciones.classList.add("oculto");
+      return;
+    }
+    fetch(API + "/api/planes/opciones", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({fecha_evento: fecha})
+    }).then(function(r){ return r.json().then(function(d){ return {ok: r.ok, data: d}; }); })
+      .then(function(res){
+        if(!res.ok){
+          elOpciones.classList.add("oculto");
+          mostrarError(errDatos, res.data.error || "No se pudo calcular el plan.");
+          return;
+        }
+        opcionesCache = res.data.opciones;
+        renderOpciones(opcionesCache);
+        elOpciones.classList.remove("oculto");
+      })
+      .catch(function(){
+        mostrarError(errDatos, "No se pudo conectar con el servidor. Probá de nuevo.");
+      });
+  }
+
+  function renderOpciones(opciones){
+    listaOpciones.innerHTML = "";
+    seleccion = null;
+    btnConfirmar.disabled = true;
+    opciones.forEach(function(op){
+      var div = document.createElement("div");
+      div.className = "opcion";
+      div.dataset.cantidad = op.cantidad_cuotas;
+
+      var titulo = op.cantidad_cuotas === 1 ? "Pago único" : (op.cantidad_cuotas + " cuotas");
+      var recargo = op.total > 500000 ? '<span class="opcion-recargo">Incluye financiación</span>' : "";
+
+      var detalle = op.cuotas.map(function(c){
+        return '<div class="fila"><span>' + c.concepto + ' · ' + fechaLegible(c.fecha_vencimiento) + '</span><span>' + moneda(c.monto) + '</span></div>';
+      }).join("");
+
+      div.innerHTML =
+        '<div class="opcion-top"><span class="opcion-titulo">' + titulo + '</span><span class="opcion-total">' + moneda(op.total) + '</span></div>' +
+        recargo +
+        '<div class="opcion-detalle">' + detalle + '</div>';
+
+      div.addEventListener("click", function(){
+        document.querySelectorAll(".opcion").forEach(function(o){ o.classList.remove("selected"); });
+        div.classList.add("selected");
+        seleccion = op.cantidad_cuotas;
+        btnConfirmar.disabled = false;
+      });
+
+      listaOpciones.appendChild(div);
+    });
+  }
+
+  function confirmarPlan(){
+    if(!seleccion) return;
+    mostrarError(errConfirmar, "");
+    btnConfirmar.disabled = true;
+    btnConfirmar.innerHTML = '<span class="spinner"></span>Confirmando...';
+
+    fetch(API + "/api/planes", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        nombre: inNombre.value.trim(),
+        telefono: inTelefono.value.trim(),
+        fecha_evento: inFecha.value,
+        cantidad_cuotas: seleccion
+      })
+    }).then(function(r){ return r.json().then(function(d){ return {ok: r.ok, data: d}; }); })
+      .then(function(res){
+        if(!res.ok){
+          mostrarError(errConfirmar, res.data.error || "No se pudo confirmar el plan.");
+          btnConfirmar.disabled = false;
+          btnConfirmar.textContent = "Confirmar plan";
+          return;
+        }
+        try { localStorage.setItem(STORAGE_KEY, res.data.plan_token); } catch(e){}
+        mostrarPlan(res.data);
+      })
+      .catch(function(){
+        mostrarError(errConfirmar, "No se pudo conectar con el servidor. Probá de nuevo.");
+        btnConfirmar.disabled = false;
+        btnConfirmar.textContent = "Confirmar plan";
+      });
+  }
+
+  function mostrarPlan(data){
+    elDatos.classList.add("oculto");
+    elOpciones.classList.add("oculto");
+    elPlan.classList.remove("oculto");
+    renderPlan(data);
+    if(pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(function(){ actualizarPlan(data.__token || currentToken); }, 20000);
+  }
+
+  var currentToken = null;
+
+  function renderPlan(data){
+    currentToken = data.plan_token || currentToken;
+    var cuotas = data.cuotas;
+    var alias = data.alias;
+    var todasPagadas = cuotas.every(function(c){ return c.estado === "pagado"; });
+
+    celebracion.classList.toggle("oculto", !todasPagadas);
+    var pagadas = cuotas.filter(function(c){ return c.estado === "pagado"; }).length;
+    planResumen.textContent = pagadas + " de " + cuotas.length + " cuotas pagadas";
+
+    listaCuotas.innerHTML = "";
+    cuotas.forEach(function(c){
+      var esPagada = c.estado === "pagado";
+      var div = document.createElement("div");
+      div.className = "cuota" + (esPagada ? " pagada" : "");
+      div.innerHTML =
+        '<div class="cuota-top">' +
+          '<div>' +
+            '<div class="cuota-concepto">' + c.concepto + '</div>' +
+            '<div class="cuota-fecha">Vence el ' + fechaLegible(c.fecha_vencimiento) + '</div>' +
+            '<span class="badge ' + (esPagada ? "badge-pagada" : "badge-pendiente") + '">' + (esPagada ? "Pagada" : "Pendiente") + '</span>' +
+          '</div>' +
+          '<div class="cuota-monto">' + moneda(c.monto) + '</div>' +
+        '</div>';
+
+      if(!esPagada){
+        var pagarBtn = document.createElement("button");
+        pagarBtn.className = "btn btn-ghost";
+        pagarBtn.style.marginTop = "12px";
+        pagarBtn.textContent = "Pagar esta cuota";
+
+        var box = document.createElement("div");
+        box.className = "pagar-box";
+        box.innerHTML =
+          '<div class="pagar-fila"><span>Alias / CVU</span><span class="val">' + alias + '</span></div>' +
+          '<div class="pagar-fila"><span>Monto exacto</span><span class="val">' + moneda(c.monto) + '</span></div>' +
+          '<p class="hint">Importante: transferí el monto exacto, con los centavos incluidos, para que el sistema detecte que este pago es tuyo.</p>';
+
+        pagarBtn.addEventListener("click", function(){
+          box.classList.toggle("abierto");
+        });
+
+        div.appendChild(pagarBtn);
+        div.appendChild(box);
+      }
+
+      listaCuotas.appendChild(div);
+    });
+  }
+
+  function actualizarPlan(token){
+    if(!token) return;
+    fetch(API + "/api/planes/" + token)
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(data){
+        if(data){
+          data.plan_token = token;
+          renderPlan(data);
+        }
+      })
+      .catch(function(){});
+  }
+
+  btnNuevoPlan.addEventListener("click", function(){
+    try { localStorage.removeItem(STORAGE_KEY); } catch(e){}
+    if(pollTimer) clearInterval(pollTimer);
+    currentToken = null;
+    inNombre.value = "";
+    inTelefono.value = "";
+    inFecha.value = "";
+    elPlan.classList.add("oculto");
+    elOpciones.classList.add("oculto");
+    elDatos.classList.remove("oculto");
+  });
+
+  inFecha.addEventListener("change", pedirOpciones);
+  btnConfirmar.addEventListener("click", confirmarPlan);
+
+  // Si ya había un plan confirmado guardado en este navegador, lo mostramos directo.
+  (function initDesdeStorage(){
+    var token = null;
+    try { token = localStorage.getItem(STORAGE_KEY); } catch(e){}
+    if(!token) return;
+    currentToken = token;
+    fetch(API + "/api/planes/" + token)
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(data){
+        if(data){
+          data.plan_token = token;
+          mostrarPlan(data);
+        }
+      })
+      .catch(function(){});
+  })();
+})();
+</script>
+</body>
+</html>
