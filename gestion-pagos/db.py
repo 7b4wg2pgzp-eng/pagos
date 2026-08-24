@@ -1,3 +1,4 @@
+import decimal
 import os
 import random
 import sqlite3
@@ -8,6 +9,29 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "")
 USANDO_POSTGRES = bool(DATABASE_URL)
 
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "pagos.db"))
+
+# --------------------------------------------------------------------------
+# Guarda de seguridad: en producción NUNCA caer a SQLite
+# --------------------------------------------------------------------------
+# Sin esta guarda, si DATABASE_URL desaparece (base vencida, borrada o mal
+# pegada) la app arranca igual contra SQLite sobre el disco efímero de Render:
+# se ve todo normal, pero los datos se borran solos en el próximo deploy y sin
+# ningún error visible. Preferimos que el deploy falle ruidosamente.
+EN_PRODUCCION = bool(
+    os.environ.get("RENDER")
+    or os.environ.get("RENDER_SERVICE_ID")
+    or os.environ.get("RENDER_EXTERNAL_URL")
+)
+PERMITIR_SQLITE = os.environ.get("PERMITIR_SQLITE") == "1"
+
+if EN_PRODUCCION and not USANDO_POSTGRES and not PERMITIR_SQLITE:
+    raise RuntimeError(
+        "FALTA DATABASE_URL. La app está corriendo en Render sin conexión a "
+        "Postgres, así que caería en SQLite sobre disco efímero y perdería "
+        "todos los planes y pagos en el próximo deploy. Configurá DATABASE_URL "
+        "en Environment. (Si de verdad querés una base descartable, poné "
+        "PERMITIR_SQLITE=1.)"
+    )
 
 if USANDO_POSTGRES:
     import psycopg2
@@ -496,6 +520,137 @@ def marcar_pagado(cliente_id, mp_payment_id=None):
     )
     conn.commit()
     conn.close()
+
+
+# --------------------------------------------------------------------------
+# Backup y restauración (exportar/importar toda la base como JSON)
+# --------------------------------------------------------------------------
+
+# Columnas de negocio de cada tabla. El log de webhooks queda afuera a
+# propósito: es diagnóstico, no hace falta para reconstruir el estado.
+TABLAS_BACKUP = {
+    "planes": ["plan_token", "nombre", "usuario", "password_hash",
+               "fecha_evento", "cantidad_cuotas", "fecha_creacion"],
+    "clientes": ["id", "nombre", "evento", "telefono", "monto_esperado", "estado",
+                 "mp_payment_id", "fecha_pago", "fecha_creacion", "notas",
+                 "fecha_vencimiento", "concepto", "plan_token"],
+    "config": ["clave", "valor"],
+}
+
+VERSION_BACKUP = 1
+
+
+def _valor_json(v):
+    """Convierte tipos de la base a algo serializable a JSON."""
+    if isinstance(v, decimal.Decimal):
+        return float(v)
+    if hasattr(v, "isoformat"):
+        return v.isoformat()
+    return v
+
+
+def _fila_a_dict(row, columnas):
+    d = dict(row)
+    return {c: _valor_json(d.get(c)) for c in columnas}
+
+
+def exportar_todo():
+    """Snapshot completo de los datos de negocio, listo para guardar como JSON
+    o para volver a cargar con importar_todo()."""
+    conn = get_db()
+    datos = {
+        "version": VERSION_BACKUP,
+        "exportado": datetime.utcnow().isoformat(),
+        "backend": "postgres" if USANDO_POSTGRES else "sqlite",
+    }
+    try:
+        for tabla, columnas in TABLAS_BACKUP.items():
+            sql = "SELECT * FROM {} ".format(tabla)
+            cur = _run(conn, sql, sql)
+            datos[tabla] = [_fila_a_dict(r, columnas) for r in cur.fetchall()]
+    finally:
+        conn.close()
+    return datos
+
+
+def contar_filas():
+    """Cuántas filas hay hoy en cada tabla de negocio."""
+    conn = get_db()
+    conteo = {}
+    try:
+        for tabla in TABLAS_BACKUP:
+            sql = "SELECT COUNT(*) AS n FROM {}".format(tabla)
+            cur = _run(conn, sql, sql)
+            fila = cur.fetchone()
+            conteo[tabla] = int(dict(fila)["n"] if not isinstance(fila, tuple) else fila[0])
+    finally:
+        conn.close()
+    return conteo
+
+
+def _resetear_secuencia_clientes(conn):
+    """Después de insertar ids explícitos, la secuencia de Postgres queda
+    atrasada y el próximo INSERT chocaría con un id ya usado."""
+    if not USANDO_POSTGRES:
+        return
+    conn.cursor().execute(
+        "SELECT setval(pg_get_serial_sequence('clientes', 'id'), "
+        "COALESCE((SELECT MAX(id) FROM clientes), 1))"
+    )
+
+
+def importar_todo(datos, forzar=False):
+    """Carga un backup hecho con exportar_todo().
+
+    Por seguridad solo importa sobre tablas vacías. Con forzar=True borra lo
+    que haya y deja exactamente el contenido del backup.
+    Devuelve un dict con la cantidad de filas insertadas por tabla."""
+    if not isinstance(datos, dict) or "clientes" not in datos or "planes" not in datos:
+        raise ValueError("El archivo no parece un backup de esta plataforma.")
+    if int(datos.get("version", 0)) > VERSION_BACKUP:
+        raise ValueError(
+            "El backup es de una versión más nueva que esta app (v{}).".format(
+                datos.get("version"))
+        )
+
+    if not forzar:
+        actuales = contar_filas()
+        con_datos = [t for t, n in actuales.items() if t != "config" and n > 0]
+        if con_datos:
+            raise ValueError(
+                "La base ya tiene datos ({}). Marcá 'reemplazar' si querés "
+                "pisarlos.".format(", ".join(
+                    "{}: {}".format(t, actuales[t]) for t in con_datos))
+            )
+
+    conn = get_db()
+    insertadas = {}
+    try:
+        if forzar:
+            for tabla in ("clientes", "planes", "config"):
+                sql = "DELETE FROM {}".format(tabla)
+                _run(conn, sql, sql)
+
+        for tabla, columnas in TABLAS_BACKUP.items():
+            filas = datos.get(tabla) or []
+            marcas = ", ".join([_ph()] * len(columnas))
+            sql = "INSERT INTO {} ({}) VALUES ({})".format(
+                tabla, ", ".join(columnas), marcas)
+            n = 0
+            for fila in filas:
+                valores = tuple(fila.get(c) for c in columnas)
+                _run(conn, sql, sql, valores)
+                n += 1
+            insertadas[tabla] = n
+
+        _resetear_secuencia_clientes(conn)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return insertadas
 
 
 def log_webhook(payload, resultado):

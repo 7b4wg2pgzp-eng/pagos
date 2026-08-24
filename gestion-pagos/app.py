@@ -338,6 +338,55 @@ def sincronizar():
 
 
 # --------------------------------------------------------------------------
+# Backup y restauración
+# --------------------------------------------------------------------------
+
+@app.route("/panel/backup")
+@login_requerido
+def descargar_backup():
+    """Baja todos los planes, cuotas y config en un JSON. Sirve tanto de copia
+    de seguridad como para mudar la base a otro proveedor."""
+    datos = db.exportar_todo()
+    nombre = "backup-cuotas-{}.json".format(datetime.utcnow().strftime("%Y%m%d-%H%M"))
+    cuerpo = json.dumps(datos, ensure_ascii=False, indent=2)
+    return app.response_class(
+        cuerpo,
+        mimetype="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{nombre}"'},
+    )
+
+
+@app.route("/panel/restaurar", methods=["POST"])
+@login_requerido
+def restaurar_backup():
+    """Carga un archivo generado por /panel/backup."""
+    archivo = request.files.get("backup")
+    if not archivo or not archivo.filename:
+        flash("Elegí un archivo de backup primero")
+        return redirect(url_for("dashboard"))
+
+    try:
+        datos = json.loads(archivo.read().decode("utf-8"))
+    except Exception:
+        flash("El archivo no es un JSON válido")
+        return redirect(url_for("dashboard"))
+
+    forzar = request.form.get("reemplazar") == "si"
+    try:
+        insertadas = db.importar_todo(datos, forzar=forzar)
+    except ValueError as e:
+        flash(str(e))
+        return redirect(url_for("dashboard"))
+    except Exception as e:
+        flash(f"No se pudo restaurar: {e}")
+        return redirect(url_for("dashboard"))
+
+    flash("Backup restaurado: {}.".format(
+        ", ".join(f"{n} en {t}" for t, n in insertadas.items())))
+    return redirect(url_for("dashboard"))
+
+
+# --------------------------------------------------------------------------
 # Calculadora pública + área del cliente
 # --------------------------------------------------------------------------
 

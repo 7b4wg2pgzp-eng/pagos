@@ -157,6 +157,36 @@
 </div>
 {% endif %}
 
+<!-- ---------------- Backup ---------------- -->
+<details class="card bloque">
+  <summary><b>Copia de seguridad</b> — bajá todo a un archivo, o restaurá uno</summary>
+
+  <p style="margin:12px 0">
+    <a class="boton secundario" href="{{ url_for('descargar_backup') }}">Descargar backup</a>
+    <small style="display:block;margin-top:6px">
+      Un archivo con todos los planes, cuotas, pagos y precios. Guardalo cada tanto:
+      es tu copia, independiente del proveedor de la base.
+    </small>
+  </p>
+
+  <form method="post" action="{{ url_for('restaurar_backup') }}"
+        enctype="multipart/form-data" class="grid-config"
+        onsubmit="return !this.reemplazar.checked || confirm('Vas a BORRAR todos los planes y cuotas actuales y dejar solo los del archivo. ¿Seguro?');">
+    <label>Restaurar desde un archivo
+      <input type="file" name="backup" accept="application/json,.json" required>
+      <small>Solo entra si la base está vacía, salvo que marques lo de abajo.</small>
+    </label>
+    <label class="check-linea">
+      <input type="checkbox" name="reemplazar" value="si">
+      Reemplazar lo que haya (borra todo lo actual)
+    </label>
+    <div class="config-submit">
+      <button type="submit" class="boton">Restaurar</button>
+      <small>Usalo al mudar la base a otro proveedor.</small>
+    </div>
+  </form>
+</details>
+
 <p class="pie-datos">Cobrás en <b>{{ alias }}</b>{% if cvu %} · CVU <b>{{ cvu }}</b>{% endif %}</p>
 
 {% endblock %}
