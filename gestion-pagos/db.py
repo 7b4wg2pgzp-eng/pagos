@@ -197,8 +197,9 @@ CONFIG_DEFECTO = {
     "cuota_minima": "50000",                # no se ofrecen cuotas por debajo de esto
     "max_cuotas": "8",                      # tope de cuotas del saldo
     "mp_checkout_activo": "0",              # 1 = ofrecer pago con Mercado Pago
-    "recargo_mp": "0.97",                   # % estimado para el 1er cobro: 0,8% + IVA,
-                                            # que es el arancel del rail de transferencias
+    "recargo_mp": "1.53",                   # % estimado para el 1er cobro, según el
+                                            # simulador de Mercado Pago con acreditación
+                                            # a 35 días (ya incluye IVA)
     "recargo_auto": "1",                    # 1 = usar la comisión real ya medida
     "recargo_observado": "0",               # % medido en el último pago (lo escribe el webhook)
     "recargo_margen": "0.3",                # % extra de colchón sobre lo medido

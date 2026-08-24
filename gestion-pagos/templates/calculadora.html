@@ -835,13 +835,12 @@
           div.appendChild(bPagar);
 
           if(esProxima){
-            // Anticipar el login evita la desconfianza: si el cliente no
-            // espera la pantalla de Mercado Libre, la lee como que algo anda
-            // mal. Avisado de antes, la lee como que era el paso que venía.
+            // Con la tarjeta habilitada ya no se puede prometer que entre con
+            // cuenta de Mercado Pago: el que paga con tarjeta no necesita
+            // ninguna. Queda solo el sello de confianza.
             var seguro = document.createElement("p");
             seguro.className = "sello-seguro";
-            seguro.innerHTML = "Entrás con tu cuenta de Mercado Pago" +
-              "<br><span class=\"sello-chico\">Pago protegido</span>";
+            seguro.textContent = "Pago protegido por Mercado Pago";
             div.appendChild(seguro);
           }
         } else {

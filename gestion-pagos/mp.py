@@ -46,14 +46,16 @@ def search_recent_payments(limit=30):
 def crear_preferencia(titulo, monto, referencia_externa, url_vuelta, url_webhook=None):
     """Arma una preferencia de Checkout Pro para cobrar UNA cuota.
 
-    Solo medios de comisión baja: saldo de Mercado Pago y pago con
-    transferencia desde cualquier banco o billetera (ambos en la banda de
-    6-8 por mil). Se excluyen tarjetas de crédito y débito, efectivo y cajero,
-    donde la comisión salta de ~0,6% a 2,99%-4,49% y el negocio deja de cerrar.
+    Quedan habilitados saldo de Mercado Pago, transferencia y tarjeta en un
+    pago: con acreditación a 35 días el simulador de Mercado Pago da la misma
+    comisión para los tres, así que bloquear la tarjeta no ahorraba nada y sí
+    dejaba afuera a quien no tiene cuenta de Mercado Pago (que además es el
+    único que se topa con la pantalla de login).
 
-    Se deja habilitada la transferencia además del saldo a propósito: si solo
-    aceptara saldo, el cliente que tiene la plata en el banco y no en Mercado
-    Pago no podría pagar y se quedaría sin ninguna salida.
+    Se excluyen efectivo y cajero, que no sirven para cobrar a distancia, y
+    las cuotas sin tarjeta, que son financiación de Mercado Pago y se cobran
+    mucho más caro. `installments: 1` impide pagar en cuotas con tarjeta, que
+    tiene un arancel muy superior al de un pago.
 
     `referencia_externa` es lo que después nos devuelve el webhook para saber
     exactamente qué cuota se pagó, sin depender del monto.
@@ -74,16 +76,17 @@ def crear_preferencia(titulo, monto, referencia_externa, url_vuelta, url_webhook
             "failure": url_vuelta,
         },
         "auto_return": "approved",
-        # Fuera todo lo caro. Queda saldo en cuenta y pago con transferencia.
         "payment_methods": {
             "excluded_payment_types": [
-                {"id": "credit_card"},
-                {"id": "debit_card"},
-                {"id": "prepaid_card"},
-                {"id": "ticket"},
-                {"id": "atm"},
+                {"id": "ticket"},   # efectivo (Rapipago, Pago Fácil)
+                {"id": "atm"},      # cajero automático
+            ],
+            # Financiación propia de Mercado Pago: arancel mucho más alto.
+            "excluded_payment_methods": [
+                {"id": "consumer_credits"},
             ],
             "installments": 1,
+            "default_installments": 1,
         },
     }
     if url_webhook:
