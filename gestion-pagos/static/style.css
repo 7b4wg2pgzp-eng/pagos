@@ -149,6 +149,30 @@ main { max-width: 980px; }
 .acceso-cliente[open] summary::before { content: "▾ "; }
 .acceso-cliente .grid-config { margin-top: 10px; margin-bottom: 6px; }
 
+/* Separador del bloque de Mercado Pago, para que no se pierda entre precios */
+.sub-bloque {
+  grid-column: 1 / -1;
+  margin-top: 10px; padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.sub-titulo {
+  margin: 0; font-size: 14px; font-weight: 700; color: var(--text);
+  display: flex; align-items: center; gap: 10px;
+}
+.sub-ayuda { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.pastilla {
+  font-size: 10.5px; letter-spacing: .07em; padding: 3px 8px; border-radius: 99px;
+  background: rgba(255,255,255,.06); color: var(--muted); border: 1px solid var(--border);
+}
+.sub-bloque.activo .pastilla {
+  background: rgba(143,209,158,.12); color: #8fd19e; border-color: rgba(143,209,158,.4);
+}
+.check-linea.destacada {
+  padding: 10px 12px; border-radius: 8px;
+  background: rgba(212,175,110,.08); border: 1px solid rgba(212,175,110,.3);
+  color: var(--text); font-size: 14px;
+}
+
 /* Lo que Mercado Pago cobró de verdad en el último pago */
 .medicion {
   grid-column: 1 / -1;

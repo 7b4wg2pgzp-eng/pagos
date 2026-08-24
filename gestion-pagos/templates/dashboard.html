@@ -44,10 +44,25 @@
       <input type="number" name="max_cuotas" value="{{ config.max_cuotas }}" min="1" max="24">
       <small>Tope de cuotas del saldo</small>
     </label>
-    <label class="check-linea">
+    <div class="sub-bloque {% if config.mp_checkout_activo %}activo{% endif %}">
+      <p class="sub-titulo">
+        Cobro con Mercado Pago
+        <span class="pastilla">{{ 'ACTIVADO' if config.mp_checkout_activo else 'APAGADO' }}</span>
+      </p>
+      <p class="sub-ayuda">
+        {% if config.mp_checkout_activo %}
+          El cliente ve un botón «Pagar» y va directo al checkout. Los montos que
+          muestra la calculadora ya incluyen la comisión.
+        {% else %}
+          Mientras esté apagado, el cliente ve el alias y el CVU para transferir a mano.
+          Tildá la casilla y guardá para activar el botón de pago.
+        {% endif %}
+      </p>
+    </div>
+    <label class="check-linea destacada">
       <input type="checkbox" name="mp_checkout_activo" value="si"
              {% if config.mp_checkout_activo %}checked{% endif %}>
-      Ofrecer pago con Mercado Pago
+      <b>Ofrecer pago con Mercado Pago</b>
     </label>
     <label class="check-linea">
       <input type="checkbox" name="recargo_auto" value="si"
