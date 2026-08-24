@@ -4,6 +4,7 @@ import functools
 from datetime import datetime, date
 
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+from werkzeug.security import generate_password_hash, check_password_hash
 
 import db
 import mp
@@ -15,11 +16,17 @@ app.secret_key = os.environ.get("SECRET_KEY", "cambiar-esta-clave-en-produccion"
 ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
 ADMIN_PASS = os.environ.get("ADMIN_PASS", "")
 ALIAS_COBRO = os.environ.get("ALIAS_COBRO", "tu.alias.mp")
+CVU_COBRO = os.environ.get("CVU_COBRO", "")
 
 db.init_db()
 
 
+# --------------------------------------------------------------------------
+# Helpers
+# --------------------------------------------------------------------------
+
 def login_requerido(f):
+    """Protege el panel de gestión (solo Nico)."""
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
         if not session.get("logueado"):
@@ -28,6 +35,78 @@ def login_requerido(f):
 
     return wrapper
 
+
+@app.template_filter("pesos")
+def filtro_pesos(valor, decimales=2):
+    """Formato argentino: 550002.12 -> 550.002,12"""
+    try:
+        n = float(valor)
+    except (TypeError, ValueError):
+        return valor
+    s = f"{n:,.{decimales}f}"
+    return s.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
+
+
+def _parsear_fecha(valor):
+    try:
+        return datetime.strptime(valor, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
+def _monto(valor, defecto=0.0):
+    """Acepta tanto '1.234,56' (formato argentino) como '1234.56' (plano).
+
+    Reglas:
+      - Si hay coma, la coma es el separador decimal y los puntos son de miles.
+      - Si solo hay puntos, se toman como separador de miles unicamente cuando
+        el ultimo grupo tiene exactamente 3 digitos ('500.000'); si no, el
+        punto es decimal ('123456.78').
+    """
+    s = str(valor).strip().replace(" ", "").replace("$", "")
+    if not s:
+        return defecto
+    if "," in s:
+        s = s.replace(".", "").replace(",", ".")
+    elif "." in s:
+        if len(s.rsplit(".", 1)[1]) == 3:
+            s = s.replace(".", "")
+    try:
+        return round(float(s), 2)
+    except (TypeError, ValueError):
+        return defecto
+
+
+def _cuota_publica(row):
+    """Recorta una fila de `clientes` a los campos que el cliente puede ver."""
+    return {
+        "id": row["id"],
+        "concepto": row["concepto"],
+        "monto": float(row["monto_esperado"]),
+        "fecha_vencimiento": row["fecha_vencimiento"],
+        "estado": row["estado"],
+    }
+
+
+def _respuesta_plan(plan_token, incluir_token=True):
+    plan = db.obtener_plan(plan_token)
+    datos = {
+        "alias": ALIAS_COBRO,
+        "cvu": CVU_COBRO,
+        "cuotas": [_cuota_publica(c) for c in plan],
+    }
+    if incluir_token:
+        datos["plan_token"] = plan_token
+    cab = db.obtener_cabecera_plan(plan_token)
+    if cab:
+        datos["nombre"] = cab["nombre"]
+        datos["usuario"] = cab["usuario"]
+    return datos
+
+
+# --------------------------------------------------------------------------
+# Panel de gestión (privado)
+# --------------------------------------------------------------------------
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -43,22 +122,114 @@ def login():
 
 @app.route("/logout")
 def logout():
-    session.clear()
+    session.pop("logueado", None)
     return redirect(url_for("login"))
 
 
 @app.route("/")
 @login_requerido
 def dashboard():
+    """Panel de gestión: planes agrupados + cobros sueltos + configuración."""
     clientes = db.listar_clientes()
-    pendientes = [c for c in clientes if c["estado"] == "pendiente"]
-    pagados = [c for c in clientes if c["estado"] == "pagado"]
+    cabeceras = {p["plan_token"]: p for p in db.listar_planes()}
+
+    planes_agrupados = {}
+    sueltos = []
+    for c in clientes:
+        token = c["plan_token"]
+        if token:
+            planes_agrupados.setdefault(token, []).append(c)
+        else:
+            sueltos.append(c)
+
+    # Ordenar cada plan por vencimiento y armar el resumen
+    lista_planes = []
+    for token, cuotas in planes_agrupados.items():
+        cuotas.sort(key=lambda x: (x["fecha_vencimiento"] or "", x["id"]))
+        pagadas = sum(1 for c in cuotas if c["estado"] == "pagado")
+        total = sum(float(c["monto_esperado"]) for c in cuotas)
+        cobrado = sum(float(c["monto_esperado"]) for c in cuotas if c["estado"] == "pagado")
+        cab = cabeceras.get(token)
+        lista_planes.append(
+            {
+                "token": token,
+                "cabecera": cab,
+                "nombre": (cab["nombre"] if cab else None) or cuotas[0]["nombre"],
+                "usuario": cab["usuario"] if cab else None,
+                "fecha_evento": (cab["fecha_evento"] if cab else None) or cuotas[0]["evento"],
+                "cuotas": cuotas,
+                "pagadas": pagadas,
+                "total_cuotas": len(cuotas),
+                "monto_total": total,
+                "monto_cobrado": cobrado,
+                "completo": pagadas == len(cuotas),
+            }
+        )
+    lista_planes.sort(key=lambda p: (p["completo"], p["fecha_evento"] or ""))
+
     return render_template(
         "dashboard.html",
-        pendientes=pendientes,
-        pagados=pagados,
+        planes=lista_planes,
+        sueltos=sueltos,
         alias=ALIAS_COBRO,
+        cvu=CVU_COBRO,
+        config=db.leer_config(),
+        hoy=date.today().isoformat(),
     )
+
+
+@app.route("/config", methods=["POST"])
+@login_requerido
+def guardar_configuracion():
+    nuevos = {}
+    for clave in ("presupuesto_base", "presupuesto_financiado", "sena"):
+        valor = _monto(request.form.get(clave, ""), None)
+        if valor is None or valor <= 0:
+            flash(f"El valor de {clave.replace('_', ' ')} no es válido")
+            return redirect(url_for("dashboard"))
+        nuevos[clave] = valor
+    if nuevos["sena"] >= nuevos["presupuesto_base"]:
+        flash("La seña tiene que ser menor al presupuesto base")
+        return redirect(url_for("dashboard"))
+    db.guardar_config(nuevos)
+    flash("Montos actualizados. Los planes nuevos ya usan estos valores.")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/planes/nuevo", methods=["POST"])
+@login_requerido
+def crear_plan_manual():
+    """Crea un plan a mano desde el panel, por si falla el flujo del cliente."""
+    nombre = request.form.get("nombre", "").strip() or "Sin nombre"
+    fecha_evento = _parsear_fecha(request.form.get("fecha_evento", ""))
+    try:
+        cantidad = int(request.form.get("cantidad_cuotas", "0"))
+    except ValueError:
+        cantidad = 0
+
+    if not fecha_evento or cantidad < 1:
+        flash("Completá la fecha del evento y una cantidad de cuotas válida")
+        return redirect(url_for("dashboard"))
+
+    cuotas = planes.calcular_plan(fecha_evento, cantidad)
+    plan_token, _ = db.crear_plan(
+        nombre=nombre,
+        telefono="",
+        evento=fecha_evento.isoformat(),
+        cuotas=cuotas,
+        notas="Creado a mano desde el panel",
+    )
+    db.registrar_plan(plan_token, nombre, None, None, fecha_evento.isoformat(), cantidad)
+    flash(f"Plan creado para {nombre} ({len(cuotas)} cuotas)")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/planes/<token>/eliminar", methods=["POST"])
+@login_requerido
+def eliminar_plan_admin(token):
+    db.eliminar_plan(token)
+    flash("Plan eliminado por completo")
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/clientes/nuevo", methods=["GET", "POST"])
@@ -69,31 +240,45 @@ def nuevo_cliente():
         evento = request.form.get("evento", "").strip()
         telefono = request.form.get("telefono", "").strip()
         notas = request.form.get("notas", "").strip()
-        try:
-            monto_base = float(request.form.get("monto_base", "0").replace(",", "."))
-        except ValueError:
-            flash("Monto inválido")
-            return redirect(url_for("nuevo_cliente"))
+        monto_base = _monto(request.form.get("monto_base", "0"))
 
         if not nombre or monto_base <= 0:
             flash("Completá al menos el nombre y un monto mayor a 0")
             return redirect(url_for("nuevo_cliente"))
 
         cliente_id, monto = db.crear_cliente(nombre, evento, telefono, monto_base, notas)
-        flash(f"Cliente creado. Monto exacto a transferir: ${monto:,.2f}")
+        flash(f"Cobro creado. Monto exacto a transferir: ${monto:,.2f}")
         return redirect(url_for("detalle_cliente", cliente_id=cliente_id))
 
     return render_template("nuevo.html")
 
 
-@app.route("/clientes/<int:cliente_id>")
+@app.route("/clientes/<int:cliente_id>", methods=["GET", "POST"])
 @login_requerido
 def detalle_cliente(cliente_id):
     cliente = db.obtener_cliente(cliente_id)
     if not cliente:
-        flash("Cliente no encontrado")
+        flash("Cobro no encontrado")
         return redirect(url_for("dashboard"))
-    return render_template("detalle.html", c=cliente, alias=ALIAS_COBRO)
+
+    if request.method == "POST":
+        monto = _monto(request.form.get("monto_esperado", ""), None)
+        if monto is None or monto <= 0:
+            flash("El monto no es válido")
+            return redirect(url_for("detalle_cliente", cliente_id=cliente_id))
+        db.actualizar_cuota(
+            cliente_id,
+            nombre=request.form.get("nombre", "").strip() or cliente["nombre"],
+            concepto=request.form.get("concepto", "").strip(),
+            monto=monto,
+            fecha_vencimiento=request.form.get("fecha_vencimiento", "").strip(),
+            estado=("pagado" if request.form.get("estado") == "pagado" else "pendiente"),
+            notas=request.form.get("notas", "").strip(),
+        )
+        flash("Cambios guardados")
+        return redirect(url_for("detalle_cliente", cliente_id=cliente_id))
+
+    return render_template("detalle.html", c=cliente, alias=ALIAS_COBRO, cvu=CVU_COBRO)
 
 
 @app.route("/clientes/<int:cliente_id>/marcar-pagado", methods=["POST"])
@@ -101,32 +286,51 @@ def detalle_cliente(cliente_id):
 def marcar_pagado_manual(cliente_id):
     db.marcar_pagado(cliente_id, mp_payment_id="manual")
     flash("Marcado como pagado manualmente")
-    return redirect(url_for("detalle_cliente", cliente_id=cliente_id))
+    return redirect(request.referrer or url_for("dashboard"))
 
 
-def _parsear_fecha(valor):
+@app.route("/clientes/<int:cliente_id>/eliminar", methods=["POST"])
+@login_requerido
+def eliminar_cuota_admin(cliente_id):
+    db.eliminar_cuota(cliente_id)
+    flash("Cuota eliminada")
+    return redirect(request.referrer or url_for("dashboard"))
+
+
+@app.route("/sincronizar", methods=["POST"])
+@login_requerido
+def sincronizar():
+    """Fallback: busca pagos recientes aprobados en Mercado Pago y los
+    matchea contra cuotas pendientes, por si algún webhook no llegó."""
     try:
-        return datetime.strptime(valor, "%Y-%m-%d").date()
-    except (TypeError, ValueError):
-        return None
+        pagos = mp.search_recent_payments(limit=30)
+    except Exception as e:
+        flash(f"No se pudo consultar Mercado Pago: {e}")
+        return redirect(url_for("dashboard"))
+
+    encontrados = 0
+    for pago in pagos:
+        monto = pago.get("transaction_amount")
+        payment_id = pago.get("id")
+        if monto is None:
+            continue
+        cliente = db.buscar_pendiente_por_monto(monto)
+        if cliente:
+            db.marcar_pagado(cliente["id"], mp_payment_id=str(payment_id))
+            encontrados += 1
+
+    flash(f"Sincronización manual: {encontrados} pago(s) matcheado(s)")
+    return redirect(url_for("dashboard"))
 
 
-def _cuota_publica(row):
-    """Recorta una fila de `clientes` a los campos que la calculadora
-    pública puede ver (sin teléfono, notas ni mp_payment_id)."""
-    return {
-        "id": row["id"],
-        "concepto": row["concepto"],
-        "monto": float(row["monto_esperado"]),
-        "fecha_vencimiento": row["fecha_vencimiento"],
-        "estado": row["estado"],
-    }
-
+# --------------------------------------------------------------------------
+# Calculadora pública + área del cliente
+# --------------------------------------------------------------------------
 
 @app.route("/cuotas")
 def calculadora_cuotas():
     """Página pública de la calculadora de cuotas para clientes."""
-    return render_template("calculadora.html", alias=ALIAS_COBRO)
+    return render_template("calculadora.html", alias=ALIAS_COBRO, cvu=CVU_COBRO)
 
 
 @app.route("/api/planes/opciones", methods=["POST"])
@@ -136,9 +340,9 @@ def api_opciones_plan():
     body = request.get_json(silent=True) or {}
     fecha_evento = _parsear_fecha(body.get("fecha_evento", ""))
     if not fecha_evento:
-        return jsonify({"error": "fecha_evento inválida, formato YYYY-MM-DD"}), 400
+        return jsonify({"error": "Elegí la fecha de tu evento"}), 400
     if fecha_evento < date.today():
-        return jsonify({"error": "La fecha del evento ya pasó"}), 400
+        return jsonify({"error": "Esa fecha ya pasó"}), 400
 
     max_cuotas = planes.cuotas_maximas_disponibles(fecha_evento)
     opciones = []
@@ -163,82 +367,94 @@ def api_opciones_plan():
 
 @app.route("/api/planes", methods=["POST"])
 def api_crear_plan():
-    """Confirma y persiste el plan elegido: crea un registro real por cada
-    cuota (misma lógica de montos únicos que usan los clientes del panel),
-    para que el webhook de Mercado Pago las detecte igual que cualquier
-    otro pago."""
+    """Confirma el plan elegido y crea la cuenta del cliente. Cada cuota queda
+    como un registro real, así el webhook de Mercado Pago la detecta igual que
+    cualquier otro cobro."""
     body = request.get_json(silent=True) or {}
-    nombre = (body.get("nombre") or "Cliente calculadora").strip()
-    telefono = (body.get("telefono") or "").strip()
+    nombre = (body.get("nombre") or "").strip()
+    usuario = (body.get("usuario") or "").strip()
+    clave = body.get("clave") or ""
     fecha_evento = _parsear_fecha(body.get("fecha_evento", ""))
     try:
         cantidad_cuotas = int(body.get("cantidad_cuotas"))
     except (TypeError, ValueError):
-        return jsonify({"error": "cantidad_cuotas inválida"}), 400
+        return jsonify({"error": "Elegí en cuántas cuotas querés pagar"}), 400
 
     if not fecha_evento:
-        return jsonify({"error": "fecha_evento inválida, formato YYYY-MM-DD"}), 400
+        return jsonify({"error": "Elegí la fecha de tu evento"}), 400
     if fecha_evento < date.today():
-        return jsonify({"error": "La fecha del evento ya pasó"}), 400
+        return jsonify({"error": "Esa fecha ya pasó"}), 400
+    if len(usuario) < 4:
+        return jsonify({"error": "El usuario tiene que tener al menos 4 caracteres"}), 400
+    if not usuario.replace(".", "").replace("_", "").replace("-", "").isalnum():
+        return jsonify({"error": "El usuario solo puede tener letras, números, punto, guion y guion bajo"}), 400
+    if len(clave) < 6:
+        return jsonify({"error": "La contraseña tiene que tener al menos 6 caracteres"}), 400
+    if db.usuario_existe(usuario):
+        return jsonify({"error": "Ese usuario ya está en uso, probá con otro"}), 409
 
     max_cuotas = planes.cuotas_maximas_disponibles(fecha_evento)
     if cantidad_cuotas < 1 or cantidad_cuotas > max_cuotas:
-        return jsonify({"error": f"cantidad_cuotas fuera de rango (máximo {max_cuotas})"}), 400
+        return jsonify({"error": f"Para esa fecha el máximo es {max_cuotas} cuotas"}), 400
 
-    # El monto de cada cuota se calcula acá, en el servidor, a partir de la
-    # fecha y la cantidad de cuotas — nunca se confía en un monto mandado
-    # por el cliente.
+    # Los montos se calculan acá, en el servidor, a partir de la fecha y la
+    # cantidad de cuotas — nunca se confía en un monto mandado por el cliente.
     cuotas_calc = planes.calcular_plan(fecha_evento, cantidad_cuotas)
-    plan_token, ids = db.crear_plan(
-        nombre=nombre,
-        telefono=telefono,
+    plan_token, _ = db.crear_plan(
+        nombre=nombre or usuario,
+        telefono="",
         evento=fecha_evento.isoformat(),
         cuotas=cuotas_calc,
         notas="Creado desde la calculadora de cuotas",
     )
-    plan = db.obtener_plan(plan_token)
-    return jsonify(
-        {
-            "plan_token": plan_token,
-            "alias": ALIAS_COBRO,
-            "cuotas": [_cuota_publica(c) for c in plan],
-        }
+    db.registrar_plan(
+        plan_token,
+        nombre or usuario,
+        usuario,
+        generate_password_hash(clave),
+        fecha_evento.isoformat(),
+        cantidad_cuotas,
     )
+    session["plan_token"] = plan_token
+    return jsonify(_respuesta_plan(plan_token))
 
 
-@app.route("/api/planes/<token>")
-def api_obtener_plan(token):
-    plan = db.obtener_plan(token)
-    if not plan:
+@app.route("/api/planes/login", methods=["POST"])
+def api_login_plan():
+    """Login del cliente para volver a ver su plan desde cualquier dispositivo."""
+    body = request.get_json(silent=True) or {}
+    usuario = (body.get("usuario") or "").strip()
+    clave = body.get("clave") or ""
+
+    cab = db.obtener_plan_por_usuario(usuario) if usuario else None
+    if not cab or not cab["password_hash"] or not check_password_hash(cab["password_hash"], clave):
+        return jsonify({"error": "Usuario o contraseña incorrectos"}), 401
+
+    session["plan_token"] = cab["plan_token"]
+    return jsonify(_respuesta_plan(cab["plan_token"]))
+
+
+@app.route("/api/planes/mio")
+def api_mi_plan():
+    """Devuelve el plan de la sesión actual del cliente, si está logueado."""
+    token = session.get("plan_token")
+    if not token:
+        return jsonify({"error": "No hay sesión"}), 401
+    if not db.obtener_plan(token):
+        session.pop("plan_token", None)
         return jsonify({"error": "Plan no encontrado"}), 404
-    return jsonify({"alias": ALIAS_COBRO, "cuotas": [_cuota_publica(c) for c in plan]})
+    return jsonify(_respuesta_plan(token))
 
 
-@app.route("/sincronizar", methods=["POST"])
-@login_requerido
-def sincronizar():
-    """Fallback: busca pagos recientes aprobados en Mercado Pago y los
-    matchea contra clientes pendientes, por si algún webhook no llegó."""
-    try:
-        pagos = mp.search_recent_payments(limit=30)
-    except Exception as e:
-        flash(f"No se pudo consultar Mercado Pago: {e}")
-        return redirect(url_for("dashboard"))
+@app.route("/api/planes/salir", methods=["POST"])
+def api_salir_plan():
+    session.pop("plan_token", None)
+    return jsonify({"ok": True})
 
-    encontrados = 0
-    for pago in pagos:
-        monto = pago.get("transaction_amount")
-        payment_id = pago.get("id")
-        if monto is None:
-            continue
-        cliente = db.buscar_pendiente_por_monto(monto)
-        if cliente:
-            db.marcar_pagado(cliente["id"], mp_payment_id=str(payment_id))
-            encontrados += 1
 
-    flash(f"Sincronización manual: {encontrados} pago(s) matcheado(s)")
-    return redirect(url_for("dashboard"))
-
+# --------------------------------------------------------------------------
+# Webhook de Mercado Pago
+# --------------------------------------------------------------------------
 
 @app.route("/webhook/mercadopago", methods=["POST"])
 def webhook_mercadopago():
@@ -269,7 +485,7 @@ def webhook_mercadopago():
                 db.marcar_pagado(cliente["id"], mp_payment_id=str(data_id))
                 resultado = f"pagado cliente {cliente['id']}"
             else:
-                resultado = f"pago aprobado sin cliente que matchee (monto {monto})"
+                resultado = f"pago aprobado sin cuota que matchee (monto {monto})"
         else:
             resultado = f"pago status={pago.get('status')}"
     else:
