@@ -2,14 +2,14 @@
 
 Reglas del negocio
 ------------------
-- Precio de contado: $550.000. Seña: $275.000, SIEMPRE, y nunca se divide.
+- Precio de contado: $500.000. Seña: $250.000, SIEMPRE, y nunca se divide.
 - La seña se abona al confirmar el plan (hoy) y no cuenta como cuota.
-- Saldo en 1 pago   -> precio total $550.000, saldo $275.000.
-- Saldo en 2 a 5    -> precio total $600.000, saldo financiado $325.000.
-- Saldo en 6 o más  -> segundo tramo de financiación, precio total $650.000,
-  saldo financiado $375.000. Así la cuota larga no queda tan chica.
+- Saldo en 1 pago   -> precio total $500.000, saldo $250.000.
+- Saldo en 2 a 6    -> precio total $550.000, saldo financiado $300.000.
+- Saldo en 7        -> segundo tramo de financiación, precio total $600.000,
+  saldo financiado $350.000. Así la cuota larga no queda tan chica.
   (el saldo financiado sube porque sube el precio total, no la seña)
-- Cuota mínima: $50.000. Tope: 8 cuotas.
+- Cuota mínima: $50.000. Tope: 7 cuotas.
 - El saldo tiene que quedar cancelado como máximo 1 mes antes del evento:
   la última cuota vence exactamente en esa fecha límite y las anteriores
   van hacia atrás, una por mes.
@@ -26,13 +26,13 @@ import db
 
 # Valores por defecto; los vigentes se leen de la tabla `config`, editable
 # desde el panel de gestión.
-PRESUPUESTO_BASE = 550_000
-PRESUPUESTO_FINANCIADO = 600_000
-PRESUPUESTO_FINANCIADO_LARGO = 650_000
-CUOTAS_TRAMO_LARGO = 6
-SENA = 275_000
+PRESUPUESTO_BASE = 500_000
+PRESUPUESTO_FINANCIADO = 550_000
+PRESUPUESTO_FINANCIADO_LARGO = 600_000
+CUOTAS_TRAMO_LARGO = 7
+SENA = 250_000
 CUOTA_MINIMA = 50_000
-MAX_CUOTAS = 8
+MAX_CUOTAS = 7
 
 
 def montos():
@@ -110,8 +110,8 @@ def calcular_plan(fecha_evento, cuotas_saldo, hoy=None):
     """Plan completo: [{concepto, monto, fecha_vencimiento}, ...].
 
     `cuotas_saldo` son las cuotas del SALDO, sin contar la seña:
-      1  -> contado  (seña + 1 pago del saldo, total $550.000)
-      2+ -> financiado (seña + n cuotas, total $600.000 / $650.000)
+      1  -> contado  (seña + 1 pago del saldo, total $500.000)
+      2+ -> financiado (seña + n cuotas, total $550.000 / $600.000)
 
     El primer ítem siempre es la seña, con vencimiento hoy.
     """

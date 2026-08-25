@@ -189,13 +189,13 @@ def init_db():
 # --------------------------------------------------------------------------
 
 CONFIG_DEFECTO = {
-    "presupuesto_base": "550000",           # contado: saldo en 1 pago
-    "presupuesto_financiado": "600000",     # tramo 1: de 2 cuotas hasta el tramo largo
-    "presupuesto_financiado_largo": "650000",  # tramo 2: desde cuotas_tramo_largo
-    "cuotas_tramo_largo": "6",              # cuota a partir de la cual rige el 2do precio
-    "sena": "275000",                       # fija, nunca se divide
+    "presupuesto_base": "500000",           # contado: saldo en 1 pago
+    "presupuesto_financiado": "550000",     # tramo 1: de 2 cuotas hasta el tramo largo
+    "presupuesto_financiado_largo": "600000",  # tramo 2: desde cuotas_tramo_largo
+    "cuotas_tramo_largo": "7",              # cuota a partir de la cual rige el 2do precio
+    "sena": "250000",                       # fija, nunca se divide
     "cuota_minima": "50000",                # no se ofrecen cuotas por debajo de esto
-    "max_cuotas": "8",                      # tope de cuotas del saldo
+    "max_cuotas": "7",                      # tope de cuotas del saldo
     "mp_checkout_activo": "0",              # 1 = ofrecer pago con Mercado Pago
     "sena_manual": "1",                     # 1 = la seña se coordina en persona al
                                             # firmar el contrato y se marca pagada
