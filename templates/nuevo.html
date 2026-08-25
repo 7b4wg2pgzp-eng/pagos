@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Nuevo cliente{% endblock %}
+{% block content %}
+<form class="card form-angosto" method="post">
+  <h1>Nuevo cliente</h1>
+  <label>Nombre</label>
+  <input type="text" name="nombre" required>
+  <label>Evento (opcional)</label>
+  <input type="text" name="evento" placeholder="Ej: Quince de Juana, 12/10">
+  <label>Teléfono (opcional)</label>
+  <input type="text" name="telefono">
+  <label>Monto a cobrar (sin centavos, se agregan automático para poder identificarlo)</label>
+  <input type="text" name="monto_base" placeholder="Ej: 45000" required>
+  <label>Notas (opcional)</label>
+  <textarea name="notas"></textarea>
+  <button type="submit">Crear</button>
+</form>
+{% endblock %}
