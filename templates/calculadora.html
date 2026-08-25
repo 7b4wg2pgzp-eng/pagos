@@ -414,10 +414,6 @@
 
     <div class="precio-box">
       <div class="precio-fila">
-        <span class="precio-label">Precio del servicio</span>
-        <span class="precio-valor" id="precio-servicio"></span>
-      </div>
-      <div class="precio-fila">
         <span class="precio-label">Seña</span>
         <span class="precio-valor" id="precio-sena"></span>
       </div>
@@ -626,7 +622,9 @@
     seleccion = null;
     $("btn-continuar").disabled = true;
 
-    $("precio-servicio").textContent = montoRedondo(d.precio_contado);
+    // A propósito NO se muestra ningún total (ni precio del servicio, ni suma
+    // del plan): el cliente decide por el valor de la cuota, y un total a la
+    // vista invita a comparar contra el número del presupuesto y a dudar.
     $("precio-sena").textContent = montoRedondo(d.sena);
     $("limite-fecha").textContent = fechaLegible(d.limite_pago);
     // La aclaración solo aparece si los montos efectivamente traen el recargo.
@@ -643,16 +641,12 @@
 
       var lineas = "";
       if(op.financiado){
-        lineas += '<div class="opcion-linea">Saldo financiado: <b>' +
-                  montoRedondo(op.saldo) + '</b> · ' + op.cuotas_saldo +
-                  ' cuotas de <b>' + montoRedondo(op.monto_cuota) + '</b></div>';
+        // El encabezado ya dice "N cuotas" y el monto "por cuota": repetirlo
+        // acá sólo agrega ruido.
         if(!op.cuotas_iguales){
           lineas += '<div class="opcion-linea">La última cuota es de ' +
                     montoRedondo(op.ultima_cuota) + '</div>';
         }
-      } else {
-        lineas += '<div class="opcion-linea">Saldo: <b>' + montoRedondo(op.saldo) +
-                  '</b> en un solo pago</div>';
       }
 
       var sello;
@@ -697,7 +691,7 @@
     if(!seleccion) return;
     var detalle = seleccion.financiado
       ? seleccion.cuotas_saldo + " cuotas de <b>" + montoRedondo(seleccion.monto_cuota) + "</b>"
-      : "saldo de <b>" + montoRedondo(seleccion.saldo) + "</b> en 1 pago";
+      : "saldo en 1 pago de <b>" + montoRedondo(seleccion.monto_cuota) + "</b>";
     $("resumen-elegido").innerHTML =
       "Seña de <b>" + montoRedondo(seleccion.sena) + "</b> + " + detalle + "<br>" +
       "Evento el <b>" + fechaLegible(elFecha.value) + "</b>";
