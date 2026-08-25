@@ -577,12 +577,33 @@ def api_opciones_plan():
     # mismo número que después se cobra. Si acá dijera $87.500 y en el panel
     # apareciera $88.358, el cliente ve que le cambiaron el precio.
     mp_activo = bool(conf.get("mp_checkout_activo")) and bool(mp.MP_ACCESS_TOKEN)
+    # La seña puede ir por transferencia: en ese caso no lleva recargo, y
+    # el total tiene que recalcularse sumando y no aplicándole el ajuste.
+    sena_limpia = bool(conf.get("sena_manual"))
+
+    def final(v):
+        return monto_con_recargo(v, conf)
+
+    def precio_vitrina(v):
+        """Precio total a mostrar arriba de todo.
+
+        Tiene que dar exactamente lo mismo que la suma de las cuotas de esa
+        opción. Si la seña se cobra a mano no lleva recargo, así que el ajuste
+        se aplica sólo al saldo: recargar el precio entero mostraría de más
+        (la diferencia es el recargo sobre la seña) y el cliente vería dos
+        números distintos en la misma pantalla.
+        """
+        if not mp_activo:
+            return v
+        if not sena_limpia:
+            return final(v)
+        sena = conf["sena"]
+        saldo = v - sena
+        if saldo <= 0:
+            return v
+        return round(sena + final(saldo), 2)
+
     if mp_activo:
-        def final(v):
-            return monto_con_recargo(v, conf)
-        # La seña puede ir por transferencia: en ese caso no lleva recargo, y
-        # el total tiene que recalcularse sumando y no aplicándole el ajuste.
-        sena_limpia = bool(conf.get("sena_manual"))
         for op in opciones:
             for k in ("saldo", "monto_cuota", "ultima_cuota"):
                 if op.get(k) is not None:
@@ -599,9 +620,9 @@ def api_opciones_plan():
 
     return jsonify(
         {
-            "precio_contado": final(conf["presupuesto_base"]) if mp_activo else conf["presupuesto_base"],
-            "precio_financiado": final(conf["presupuesto_financiado"]) if mp_activo else conf["presupuesto_financiado"],
-            "precio_financiado_largo": final(conf["presupuesto_financiado_largo"]) if mp_activo else conf["presupuesto_financiado_largo"],
+            "precio_contado": precio_vitrina(conf["presupuesto_base"]),
+            "precio_financiado": precio_vitrina(conf["presupuesto_financiado"]),
+            "precio_financiado_largo": precio_vitrina(conf["presupuesto_financiado_largo"]),
             "sena": final(conf["sena"]) if (mp_activo and not conf.get("sena_manual")) else conf["sena"],
             "cuota_minima": conf["cuota_minima"],
             "limite_pago": planes.limite_pago(fecha_evento).isoformat(),
