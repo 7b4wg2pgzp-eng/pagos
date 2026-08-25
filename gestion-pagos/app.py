@@ -133,11 +133,31 @@ def monto_con_recargo(monto, conf=None):
     r = tasa_comision(conf) / 100.0
     if r <= 0 or r >= 1:
         return round(float(monto), 2)
-    # Se redondea al peso de arriba: el cliente ve una cifra limpia en vez de
-    # centavos raros, y la diferencia queda del lado que cobra. Acá los
-    # centavos únicos ya no hacen falta — el checkout matchea por referencia,
-    # no por monto.
-    return float(math.ceil(float(monto) / (1 - r)))
+    # La base se trunca al peso antes de calcular, y el resultado se redondea
+    # al peso de arriba. Truncar es lo que hace que la calculadora y el panel
+    # muestren el MISMO número: la calculadora parte del monto redondo y el
+    # panel del guardado, que arrastra los centavos únicos del matcheo por
+    # transferencia. Sin esto los dos lados difieren en un peso, y un cliente
+    # que compara pregunta. El centavo perdido lo cubre de sobra el margen.
+    base = math.floor(float(monto))
+    return float(math.ceil(base / (1 - r)))
+
+
+def es_sena(concepto):
+    return (concepto or "").strip().lower().startswith("seña")
+
+
+def metodo_de_cobro(concepto, conf, mp_activo):
+    """Con qué medio se cobra esta cuota.
+
+    La seña se coordina en persona al firmar el contrato y se marca a mano
+    desde el panel: no lleva botón de pago ni recargo. Es además la que da
+    liquidez, porque entra meses antes del evento y sin comisión."""
+    if conf.get("sena_manual") and es_sena(concepto):
+        return "manual"
+    if not mp_activo:
+        return "transferencia"
+    return "checkout"
 
 
 def _respuesta_plan(plan_token, incluir_token=True):
@@ -147,7 +167,9 @@ def _respuesta_plan(plan_token, incluir_token=True):
     cuotas = []
     for c in plan:
         pub = _cuota_publica(c)
-        if mp_activo and c["estado"] != "pagado":
+        pub["metodo"] = metodo_de_cobro(c["concepto"], conf, mp_activo)
+        # El recargo solo existe donde hay comisión: la transferencia no lleva.
+        if pub["metodo"] == "checkout" and c["estado"] != "pagado":
             pub["monto_mp"] = monto_con_recargo(c["monto_esperado"], conf)
         cuotas.append(pub)
     datos = {
@@ -270,6 +292,7 @@ def guardar_configuracion():
     # Pago con saldo de Mercado Pago (opcional, se activa desde el panel).
     nuevos["mp_checkout_activo"] = 1 if request.form.get("mp_checkout_activo") == "si" else 0
     nuevos["recargo_auto"] = 1 if request.form.get("recargo_auto") == "si" else 0
+    nuevos["sena_manual"] = 1 if request.form.get("sena_manual") == "si" else 0
     recargo = _monto(request.form.get("recargo_mp", ""), None)
     if recargo is None or recargo < 0 or recargo >= 30:
         flash("La comisión estimada tiene que ser un porcentaje entre 0 y 30")
@@ -557,20 +580,29 @@ def api_opciones_plan():
     if mp_activo:
         def final(v):
             return monto_con_recargo(v, conf)
+        # La seña puede ir por transferencia: en ese caso no lleva recargo, y
+        # el total tiene que recalcularse sumando y no aplicándole el ajuste.
+        sena_limpia = bool(conf.get("sena_manual"))
         for op in opciones:
-            for k in ("sena", "saldo", "monto_cuota", "ultima_cuota", "total"):
+            for k in ("saldo", "monto_cuota", "ultima_cuota"):
                 if op.get(k) is not None:
                     op[k] = final(op[k])
+            if not sena_limpia and op.get("sena") is not None:
+                op["sena"] = final(op["sena"])
             for c in op.get("cuotas", []):
-                if c.get("monto") is not None:
-                    c["monto"] = final(c["monto"])
+                if c.get("monto") is None:
+                    continue
+                if sena_limpia and es_sena(c.get("concepto")):
+                    continue
+                c["monto"] = final(c["monto"])
+            op["total"] = round(sum(c["monto"] for c in op.get("cuotas", [])), 2)
 
     return jsonify(
         {
             "precio_contado": final(conf["presupuesto_base"]) if mp_activo else conf["presupuesto_base"],
             "precio_financiado": final(conf["presupuesto_financiado"]) if mp_activo else conf["presupuesto_financiado"],
             "precio_financiado_largo": final(conf["presupuesto_financiado_largo"]) if mp_activo else conf["presupuesto_financiado_largo"],
-            "sena": final(conf["sena"]) if mp_activo else conf["sena"],
+            "sena": final(conf["sena"]) if (mp_activo and not conf.get("sena_manual")) else conf["sena"],
             "cuota_minima": conf["cuota_minima"],
             "limite_pago": planes.limite_pago(fecha_evento).isoformat(),
             "max_cuotas": max(validas),
@@ -699,6 +731,8 @@ def api_pagar_cuota(cliente_id):
         return jsonify({"error": "Cuota no encontrada"}), 404
     if cuota["estado"] == "pagado":
         return jsonify({"error": "Esa cuota ya está pagada"}), 409
+    if metodo_de_cobro(cuota["concepto"], conf, True) != "checkout":
+        return jsonify({"error": "La seña se coordina directamente con Nico"}), 400
 
     a_cobrar = monto_con_recargo(cuota["monto_esperado"], conf)
     raiz = request.url_root.rstrip("/")

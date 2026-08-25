@@ -65,6 +65,11 @@
       <b>Ofrecer pago con Mercado Pago</b>
     </label>
     <label class="check-linea">
+      <input type="checkbox" name="sena_manual" value="si"
+             {% if config.sena_manual %}checked{% endif %}>
+      La seña se coordina y se marca a mano
+    </label>
+    <label class="check-linea">
       <input type="checkbox" name="recargo_auto" value="si"
              {% if config.recargo_auto %}checked{% endif %}>
       Ajustar la comisión sola con cada pago

@@ -197,6 +197,9 @@ CONFIG_DEFECTO = {
     "cuota_minima": "50000",                # no se ofrecen cuotas por debajo de esto
     "max_cuotas": "8",                      # tope de cuotas del saldo
     "mp_checkout_activo": "0",              # 1 = ofrecer pago con Mercado Pago
+    "sena_manual": "1",                     # 1 = la seña se coordina en persona al
+                                            # firmar el contrato y se marca pagada
+                                            # desde el panel: sin botón ni recargo
     "recargo_mp": "1.86",                   # % estimado para el 1er cobro. El simulador
                                             # de Mercado Pago muestra 1,53% a 35 días,
                                             # pero ese número es SIN IVA: el cargo real

@@ -304,6 +304,12 @@
   .venc-urgente{color:var(--gold-lit) !important;font-weight:600;}
   .venc-vencida{color:#e0857a !important;font-weight:600;}
 
+  .nota-manual{
+    margin:12px 0 0;padding:11px 13px;border-radius:10px;
+    background:rgba(244,239,228,.04);border:1px solid var(--line);
+    font-size:12.5px;line-height:1.5;color:rgba(244,239,228,.55);text-align:center;
+  }
+
   /* Espera de la transferencia */
   .alias-copiado{
     margin:0 0 10px;text-align:center;font-size:12px;letter-spacing:.06em;
@@ -894,9 +900,13 @@
 
     // La primera pendiente es la única que pedimos ahora. Las demás quedan
     // visibles pero apagadas: una sola decisión a la vez.
+    // El foco va a la primera que el cliente PUEDE pagar. La seña se coordina
+    // en persona: destacarla sería señalar algo sobre lo que no puede actuar.
     var idxProxima = -1;
     for(var i = 0; i < cuotas.length; i++){
-      if(cuotas[i].estado !== "pagado"){ idxProxima = i; break; }
+      if(cuotas[i].estado !== "pagado" && cuotas[i].metodo !== "manual"){
+        idxProxima = i; break;
+      }
     }
 
     var cont = $("lista-cuotas");
@@ -908,7 +918,10 @@
       // Un solo número a la vista: lo que se paga. Sin decimales si es
       // redondo — una cifra limpia se lee como precio, una con centavos
       // se lee como cálculo y invita a revisarla.
-      var aMostrar = (data.mp_activo && c.monto_mp) ? c.monto_mp : c.monto;
+      var aMostrar = (c.metodo === "checkout" && c.monto_mp) ? c.monto_mp : c.monto;
+      // La seña se arregla en persona: los centavos únicos del matcheo
+      // automático no cumplen ninguna función y solo ensucian la cifra.
+      if(c.metodo === "manual") aMostrar = Math.floor(Number(c.monto));
       var montoTexto = (Number(aMostrar) % 1 === 0) ? montoRedondo(aMostrar) : moneda(aMostrar);
 
       var div = document.createElement("div");
@@ -922,7 +935,14 @@
         '</div><div class="cuota-monto">' + montoTexto + '</div></div>';
 
       if(!pagada){
-        if(data.mp_activo && c.monto_mp){
+        if(c.metodo === "manual"){
+          // La seña se arregla en persona al firmar. Sin botón: ofrecer uno
+          // que no lleva a ningún lado es peor que no ofrecer nada.
+          var nota = document.createElement("p");
+          nota.className = "nota-manual";
+          nota.textContent = "La seña se coordina con Nico al firmar el contrato.";
+          div.appendChild(nota);
+        } else if(c.metodo === "checkout" && c.monto_mp){
           // Un botón, una palabra, sin pasos intermedios. Las cuotas que
           // todavía no vencieron dicen "Adelantar": el que quiere pagar de
           // más adelante ve que puede, sin que compita con la que toca ahora.
