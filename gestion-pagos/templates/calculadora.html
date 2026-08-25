@@ -275,7 +275,12 @@
     color:#8fd19e;
   }
   .btn-mp{width:100%;margin-top:4px;}
-  .btn-pagar{width:100%;margin-top:14px;}
+  /* Sirve para <button> y para <a>: el modo transferencia usa un enlace real
+     para que la navegación la maneje el sistema. */
+  .btn-pagar{
+    display:flex;align-items:center;justify-content:center;
+    width:100%;margin-top:14px;text-decoration:none;box-sizing:border-box;
+  }
 
   /* Barra de avance: ver lo ya hecho empuja a completar lo que falta. */
   .progreso-barra{
@@ -298,6 +303,38 @@
 
   .venc-urgente{color:var(--gold-lit) !important;font-weight:600;}
   .venc-vencida{color:#e0857a !important;font-weight:600;}
+
+  /* Espera de la transferencia */
+  .alias-copiado{
+    margin:0 0 10px;text-align:center;font-size:12px;letter-spacing:.06em;
+    text-transform:uppercase;font-family:'Barlow Condensed',sans-serif;
+    color:#8fd19e;opacity:0;transform:translateY(-4px);
+    transition:opacity .3s ease,transform .3s ease;height:0;overflow:hidden;
+  }
+  .alias-copiado.visible{opacity:1;transform:none;height:auto;margin-bottom:10px;}
+  .espera{
+    display:flex;align-items:center;gap:10px;margin-top:14px;padding:12px 14px;
+    border-radius:10px;background:rgba(212,175,110,.07);
+    border:1px solid rgba(212,175,110,.22);
+  }
+  .espera-txt{font-size:12.5px;line-height:1.5;color:rgba(244,239,228,.62);}
+  .espera-punto{
+    flex:0 0 9px;width:9px;height:9px;border-radius:50%;
+    background:var(--gold);animation:espera-late 1.5s ease-in-out infinite;
+  }
+  .espera.ok{
+    background:rgba(143,209,158,.1);border-color:rgba(143,209,158,.4);
+    justify-content:center;text-align:center;
+  }
+  .espera.ok .espera-txt{color:#8fd19e;font-weight:600;}
+  @keyframes espera-late{
+    0%,100%{opacity:.35;transform:scale(.85)}
+    50%{opacity:1;transform:scale(1)}
+  }
+  .btn-yapague{width:100%;margin-top:12px;}
+  @media (prefers-reduced-motion:reduce){
+    .espera-punto{animation:none;opacity:.8}
+  }
 
   .sello-seguro{
     margin:10px 0 0;text-align:center;font-size:12px;
@@ -782,6 +819,69 @@
     });
   }
 
+  // Pantalla de Mercado Pago que pide directamente el CBU, CVU o alias.
+  // Se llegó a esta URL navegando el flujo real: Inicio → Transferir →
+  // "Con CBU, CVU o alias". Entrando de una cae en el campo listo para pegar.
+  var MP_TRANSFERIR = "https://www.mercadopago.com.ar/money-out/transfer/discovery";
+
+  // Qué cuota estaba pagando el cliente cuando se fue a Mercado Pago.
+  var esperandoAlVolver = null;
+  try {
+    var guardado = sessionStorage.getItem("cuota_esperando");
+    if(guardado) esperandoAlVolver = parseInt(guardado, 10);
+  } catch(e){}
+
+  // --- Espera en segundo plano de una transferencia ---------------------
+  // El webhook de Mercado Pago avisa cuando entra la plata, pero puede tardar.
+  // Mientras tanto la pantalla consulta sola, así el cliente ve la cuota
+  // cambiar a "Pagada" sin refrescar ni volver más tarde.
+  var esperaTimer = null;
+  var esperaDesde = 0;
+
+  function detenerEspera(){
+    if(esperaTimer){ clearInterval(esperaTimer); esperaTimer = null; }
+  }
+
+  function manejarPlan(data, cuotaId, cajaEspera){
+    planActual = data;
+    var yaEsta = (data.cuotas || []).some(function(x){
+      return x.id === cuotaId && x.estado === "pagado";
+    });
+    if(yaEsta){
+      detenerEspera();
+      esperandoAlVolver = null;
+      try { sessionStorage.removeItem("cuota_esperando"); } catch(e){}
+      if(cajaEspera){
+        cajaEspera.classList.add("ok");
+        cajaEspera.innerHTML = '<span class="espera-txt">¡Listo! Recibimos tu pago.</span>';
+      }
+      // Se deja ver el mensaje antes de redibujar la lista.
+      setTimeout(function(){ renderPlan(data); }, 1600);
+      return true;
+    }
+    return false;
+  }
+
+  function arrancarEspera(cuotaId, cajaEspera){
+    detenerEspera();
+    esperaDesde = Date.now();
+    esperaTimer = setInterval(function(){
+      var minutos = (Date.now() - esperaDesde) / 60000;
+      pedir("/api/planes/mio").then(function(res){
+        if(!res.ok) return;
+        if(manejarPlan(res.data, cuotaId, cajaEspera)) return;
+        if(minutos > 12){
+          detenerEspera();
+          if(cajaEspera){
+            cajaEspera.innerHTML = '<span class="espera-txt">Si ya transferiste, ' +
+              'puede tardar unos minutos en impactar. Tocá «Ya transferí» para ' +
+              'que lo busquemos, o cerrá tranquilo: la cuota se marca sola.</span>';
+          }
+        }
+      }).catch(function(){});
+    }, 6000);
+  }
+
   function renderPlan(data){
     var cuotas = data.cuotas, alias = data.alias, cvu = data.cvu || "";
     var pagadas = cuotas.filter(function(c){ return c.estado === "pagado"; }).length;
@@ -844,25 +944,81 @@
             div.appendChild(seguro);
           }
         } else {
-          // Sin checkout activo, se cae a los datos para transferir.
-          var btn = document.createElement("button");
-          btn.className = "btn btn-ghost";
-          btn.style.marginTop = "12px";
-          btn.textContent = "Pagar esta cuota";
+          // Modo transferencia: mismo gesto que el botón de Mercado Pago —
+          // un solo toque. Copia el alias y deja la pantalla esperando que
+          // el pago impacte, sin que el cliente tenga que volver a mirar.
+          var etiqueta = esProxima ? "Pagar" : "Adelantar";
+          // Un <a> nativo, sin interceptar la navegación: es la forma en que
+          // el sistema puede quedarse con el link y abrir la app si la tiene.
+          var btn = document.createElement("a");
+          btn.className = "btn " + (esProxima ? "btn-primary" : "btn-ghost") + " btn-pagar";
+          btn.href = MP_TRANSFERIR;
+          btn.textContent = etiqueta;
+
           var box = document.createElement("div");
           box.className = "pagar-box";
-          box.appendChild(paso("1", "Copiá el alias y pegalo en tu billetera como destinatario."));
+
+          var copiado = document.createElement("p");
+          copiado.className = "alias-copiado";
+          copiado.textContent = "Alias copiado";
+          box.appendChild(copiado);
+
           box.appendChild(filaCopiable("Alias", alias, alias));
           if(cvu) box.appendChild(filaCopiable("CVU", cvu, cvu));
-          box.appendChild(paso("2", "Volvé acá y copiá el monto. No lo escribas a mano."));
           box.appendChild(filaCopiable("Monto exacto", moneda(c.monto), Number(c.monto).toFixed(2)));
+
           var ayuda = document.createElement("p");
           ayuda.className = "hint hint-ojo";
-          ayuda.textContent = "Los centavos del final no son un error: son los que hacen que el sistema reconozca que este pago es tuyo y marque la cuota sola. Si transferís un monto redondo, no se detecta.";
+          ayuda.textContent = "Transferí ese monto exacto, con los centavos. Son los que hacen que el sistema reconozca que el pago es tuyo y marque la cuota sola.";
           box.appendChild(ayuda);
-          btn.addEventListener("click", function(){ box.classList.toggle("abierto"); });
+
+          var espera = document.createElement("div");
+          espera.className = "espera";
+          espera.innerHTML = '<span class="espera-punto"></span>' +
+            '<span class="espera-txt">Esperando que impacte tu transferencia…</span>';
+          box.appendChild(espera);
+
+          var yaPague = document.createElement("button");
+          yaPague.type = "button";
+          yaPague.className = "btn btn-ghost btn-yapague";
+          yaPague.textContent = "Ya transferí";
+          box.appendChild(yaPague);
+
+          btn.addEventListener("click", function(){
+            // Copiamos el alias y dejamos anotado a qué cuota volvemos, sin
+            // frenar la navegación: al volver, la pantalla ya está esperando.
+            try {
+              if(navigator.clipboard && navigator.clipboard.writeText){
+                navigator.clipboard.writeText(alias);
+              }
+            } catch(e){}
+            try { sessionStorage.setItem("cuota_esperando", String(c.id)); } catch(e){}
+          });
+
+          yaPague.addEventListener("click", function(){
+            yaPague.disabled = true;
+            yaPague.textContent = "Buscando tu pago…";
+            pedir("/api/planes/verificar", {method:"POST"}).then(function(res){
+              yaPague.disabled = false;
+              yaPague.textContent = "Ya transferí";
+              if(res.ok) manejarPlan(res.data, c.id, espera);
+            }).catch(function(){
+              yaPague.disabled = false;
+              yaPague.textContent = "Ya transferí";
+            });
+          });
+
           div.appendChild(btn);
           div.appendChild(box);
+
+          // Al volver de Mercado Pago la caja ya aparece abierta, con el monto
+          // a mano y la espera corriendo. El cliente no tiene que buscar nada.
+          if(esperandoAlVolver === c.id){
+            box.classList.add("abierto");
+            copiado.classList.add("visible");
+            copiado.textContent = "Alias copiado · pegalo en Mercado Pago";
+            arrancarEspera(c.id, espera);
+          }
         }
       }
       cont.appendChild(div);

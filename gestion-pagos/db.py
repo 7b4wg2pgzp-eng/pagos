@@ -204,7 +204,7 @@ CONFIG_DEFECTO = {
                                             # guarda la tasa efectiva, con IVA incluido.
     "recargo_auto": "1",                    # 1 = usar la comisión real ya medida
     "recargo_observado": "0",               # % medido en el último pago (lo escribe el webhook)
-    "recargo_margen": "0.3",                # % extra de colchón sobre lo medido
+    "recargo_margen": "0.1",                # % extra de colchón sobre lo medido
 }
 
 # Claves que llevan decimales (el resto se redondea a entero).

@@ -1,6 +1,7 @@
 import os
 import json
 import math
+import time
 import functools
 from datetime import datetime, date
 
@@ -721,6 +722,50 @@ def api_pagar_cuota(cliente_id):
     if not link:
         return jsonify({"error": "Mercado Pago no devolvió el link de pago"}), 502
     return jsonify({"init_point": link, "monto": a_cobrar})
+
+
+@app.route("/api/planes/verificar", methods=["POST"])
+def api_verificar_transferencia():
+    """El cliente dice «ya transferí»: vamos a buscar el pago a Mercado Pago
+    en vez de esperar al webhook.
+
+    Existe porque el webhook puede demorar o no llegar, y sin esto el cliente
+    se queda mirando una pantalla que no cambia. Está limitado en frecuencia:
+    cada consulta es una llamada a la API de Mercado Pago."""
+    token = session.get("plan_token")
+    if not token:
+        return jsonify({"error": "No hay sesión"}), 401
+    if not mp.MP_ACCESS_TOKEN:
+        return jsonify({"error": "No se puede verificar en este momento"}), 503
+
+    ahora = time.time()
+    ultima = session.get("ultima_verificacion", 0)
+    if ahora - ultima < 15:
+        # Sin error: devolvemos el plano como está, el cliente sigue esperando.
+        return jsonify(_respuesta_plan(token, incluir_token=False))
+    session["ultima_verificacion"] = ahora
+
+    pendientes = [c for c in db.obtener_plan(token) if c["estado"] != "pagado"]
+    if pendientes:
+        try:
+            pagos = mp.search_recent_payments(limit=30)
+        except Exception:
+            pagos = []
+        # Matcheo por monto exacto, igual que el webhook, pero acotado a las
+        # cuotas de este plan: nunca puede marcar la de otro cliente.
+        montos = {round(float(c["monto_esperado"]), 2): c for c in pendientes}
+        for pago in pagos:
+            if pago.get("status") != "approved":
+                continue
+            try:
+                monto = round(float(pago.get("transaction_amount")), 2)
+            except (TypeError, ValueError):
+                continue
+            cuota = montos.pop(monto, None)
+            if cuota is not None:
+                db.marcar_pagado(cuota["id"], mp_payment_id=str(pago.get("id")))
+
+    return jsonify(_respuesta_plan(token, incluir_token=False))
 
 
 @app.route("/pago/vuelta")
