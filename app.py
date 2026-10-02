@@ -13,6 +13,19 @@ import mp
 import planes
 
 app = Flask(__name__)
+
+
+@app.before_request
+def redirect_legacy_pages():
+    """Mantener APIs, sesiones y notificaciones anteriores durante la migración."""
+    if (request.host.split(":", 1)[0].lower() == "cuotas.nicovasquezdjs.com"
+            and request.method in {"GET", "HEAD"}
+            and (request.path in {"/", "/cuotas", "/panel", "/panel/login", "/panel/clientes/nuevo"}
+                 or (request.path.startswith("/panel/clientes/")
+                     and request.path.removeprefix("/panel/clientes/").isdigit()))):
+        destino = "https://cuotas.nicovasquez.com.ar" + request.full_path
+        return redirect(destino.rstrip("?") if not request.query_string else destino, code=301)
+
 app.secret_key = os.environ.get("SECRET_KEY", "cambiar-esta-clave-en-produccion")
 
 ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
@@ -928,3 +941,4 @@ def webhook_mercadopago():
 
 if __name__ == "__main__":
     app.run(debug=True, port=int(os.environ.get("PORT", 5000)))
+
