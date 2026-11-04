@@ -42,11 +42,13 @@
     filter:drop-shadow(0 10px 26px rgba(0,0,0,.6));
   }
   header.top .tag{
-    font-family:'Playfair Display',serif;
-    font-style:italic;
+    font-family:'Anton',Impact,sans-serif;
+    font-style:normal;
+    text-transform:uppercase;
+    letter-spacing:.035em;
     color:var(--gold-lit);
-    font-size:clamp(21px,5.4vw,27px);
-    line-height:1.25;
+    font-size:clamp(30px,7vw,46px);
+    line-height:1.08;
     margin:0;
   }
 
@@ -388,7 +390,6 @@
 <body>
 <div class="wrap">
   <header class="top">
-    <img class="logo" src="{{ url_for('static', filename='logo.webp') }}" alt="Nico Vásquez">
     <p class="tag">Plan de cuotas para tu evento</p>
   </header>
 
