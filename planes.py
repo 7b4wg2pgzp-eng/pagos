@@ -35,7 +35,7 @@ CUOTA_MINIMA = 50_000
 MAX_CUOTAS = 7
 
 
-PAQUETES = {"nico": ("Nico Vásquez + Abrolista", 550000), "cinea": ("Nico Vásquez + Abrolista + CINÉA films", 1200000), "tiradafest": ("Nico Vásquez + Abrolista + TiradaFest", 1200000), "completa": ("Experiencia completa", 1700000)}
+PAQUETES = {"nico": ("Nico Vásquez + Abrolista", 550000), "cinea": ("Nico Vásquez + Abrolista + CINÉA films", 1200000), "tiradafest": ("Nico Vásquez + Abrolista + TiradaFest", 1200000), "completa": ("Experiencia completa", 1750000)}
 
 def configuracion_paquete(paquete, conf=None):
     if paquete not in PAQUETES:
@@ -45,6 +45,9 @@ def configuracion_paquete(paquete, conf=None):
     c.update(presupuesto_base=base, presupuesto_financiado=base+50000,
              presupuesto_financiado_largo=base+100000, cuotas_tramo_largo=6,
              sena=base//2)
+    if paquete == "completa":
+        c.update(presupuesto_financiado=1900000,
+                 presupuesto_financiado_largo=1950000)
     return c
 
 def montos():
