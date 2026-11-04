@@ -45,9 +45,6 @@ def configuracion_paquete(paquete, conf=None):
     c.update(presupuesto_base=base, presupuesto_financiado=base+50000,
              presupuesto_financiado_largo=base+100000, cuotas_tramo_largo=6,
              sena=base//2)
-    if paquete == "completa":
-        c.update(presupuesto_financiado=1900000,
-                 presupuesto_financiado_largo=1950000)
     return c
 
 def montos():
