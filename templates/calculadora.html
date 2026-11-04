@@ -645,16 +645,6 @@
       var div = document.createElement("div");
       div.className = "opcion";
 
-      var lineas = "";
-      if(op.financiado){
-        // El encabezado ya dice "N cuotas" y el monto "por cuota": repetirlo
-        // acá sólo agrega ruido.
-        if(!op.cuotas_iguales){
-          lineas += '<div class="opcion-linea">La última cuota es de ' +
-                    montoRedondo(op.ultima_cuota) + '</div>';
-        }
-      }
-
       var sello = op.tramo === "contado" ? '<span class="opcion-recargo sin-interes">Precio de contado</span>' : "";
 
       div.innerHTML =
@@ -663,7 +653,6 @@
           '<span class="opcion-precio"><span class="valor">' + montoRedondo(op.monto_cuota) +
           '</span><span class="unidad">' + (op.financiado ? "por cuota" : "saldo") + '</span></span>' +
         '</div>' +
-        lineas +
         sello;
 
       div.addEventListener("click", function(){
