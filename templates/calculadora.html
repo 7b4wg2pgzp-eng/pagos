@@ -655,22 +655,7 @@
         }
       }
 
-      var sello;
-      if(op.tramo === "contado"){
-        // Antes decía "Sin recargo". Con los montos finales eso se lee como
-        // "acá no hay ningún costo extra" y abre la pregunta de si en las
-        // otras opciones sí lo hay.
-        sello = '<span class="opcion-recargo sin-interes">Precio de contado</span>';
-      } else if(op.tramo === "financiado_largo"){
-        sello = '<span class="opcion-recargo largo">Financiación extendida</span>';
-      } else {
-        sello = '<span class="opcion-recargo">Precio financiado</span>';
-      }
-
-      var detalle = op.cuotas.map(function(x){
-        return '<div class="fila"><span>' + x.concepto + ' · ' + fechaLegible(x.fecha_vencimiento) +
-               '</span><span>' + montoRedondo(x.monto) + '</span></div>';
-      }).join("");
+      var sello = op.tramo === "contado" ? '<span class="opcion-recargo sin-interes">Precio de contado</span>' : "";
 
       div.innerHTML =
         '<div class="opcion-top">' +
@@ -679,8 +664,7 @@
           '</span><span class="unidad">' + (op.financiado ? "por cuota" : "saldo") + '</span></span>' +
         '</div>' +
         lineas +
-        sello +
-        '<div class="opcion-detalle">' + detalle + '</div>';
+        sello;
 
       div.addEventListener("click", function(){
         limpiarSeleccion();
