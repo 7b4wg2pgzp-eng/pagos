@@ -576,15 +576,20 @@ def api_opciones_plan():
     precio, la seña, la fecha límite de pago y todas las alternativas de
     cuotas del saldo que entran en el tiempo disponible."""
     body = request.get_json(silent=True) or {}
+    paquete = body.get("paquete", "nico")
+    try:
+        conf_paquete = planes.configuracion_paquete(paquete)
+    except ValueError:
+        return jsonify({"error": "Elegí una experiencia válida"}), 400
     fecha_evento = _parsear_fecha(body.get("fecha_evento", ""))
     if not fecha_evento:
         return jsonify({"error": "Elegí la fecha de tu evento"}), 400
     if fecha_evento < date.today():
         return jsonify({"error": "Esa fecha ya pasó"}), 400
 
-    conf = db.leer_config()
-    validas = planes.cuotas_disponibles(fecha_evento)
-    opciones = [planes.resumen_opcion(fecha_evento, n) for n in validas]
+    conf = conf_paquete
+    validas = planes.cuotas_disponibles(fecha_evento, conf=conf_paquete)
+    opciones = [planes.resumen_opcion(fecha_evento, n, conf=conf_paquete) for n in validas]
 
     # Si el cobro va por Mercado Pago, la calculadora tiene que mostrar el
     # mismo número que después se cobra. Si acá dijera $87.500 y en el panel
@@ -656,6 +661,11 @@ def api_crear_plan():
     nombre = (body.get("nombre") or "").strip()
     usuario = (body.get("usuario") or "").strip()
     clave = body.get("clave") or ""
+    paquete = body.get("paquete", "nico")
+    try:
+        conf_paquete = planes.configuracion_paquete(paquete)
+    except ValueError:
+        return jsonify({"error": "Elegí una experiencia válida"}), 400
     fecha_evento = _parsear_fecha(body.get("fecha_evento", ""))
     try:
         cuotas_saldo = int(body.get("cuotas_saldo", body.get("cantidad_cuotas")))
@@ -670,7 +680,7 @@ def api_crear_plan():
     if error:
         return jsonify({"error": error}), 409 if "ya está en uso" in error else 400
 
-    validas = planes.cuotas_disponibles(fecha_evento)
+    validas = planes.cuotas_disponibles(fecha_evento, conf=conf_paquete)
     if cuotas_saldo not in validas:
         return jsonify(
             {"error": f"Para esa fecha el máximo es {max(validas)} cuota(s)"}
@@ -678,11 +688,11 @@ def api_crear_plan():
 
     # Los montos se calculan acá, en el servidor, a partir de la fecha y la
     # cantidad de cuotas — nunca se confía en un monto mandado por el cliente.
-    cuotas_calc = planes.calcular_plan(fecha_evento, cuotas_saldo)
+    cuotas_calc = planes.calcular_plan(fecha_evento, cuotas_saldo, conf=conf_paquete)
 
     # Red de seguridad: ninguna cuota del saldo puede quedar por debajo del
     # mínimo, ni vencer después de la fecha límite.
-    conf = db.leer_config()
+    conf = conf_paquete
     limite = planes.limite_pago(fecha_evento)
     for c in cuotas_calc[1:]:
         if c["monto"] < conf["cuota_minima"]:
@@ -694,7 +704,7 @@ def api_crear_plan():
         telefono="",
         evento=fecha_evento.isoformat(),
         cuotas=cuotas_calc,
-        notas="Creado desde la calculadora de cuotas",
+        notas="Creado desde la calculadora de cuotas · " + planes.PAQUETES[paquete][0],
     )
     db.registrar_plan(
         plan_token,
@@ -941,4 +951,5 @@ def webhook_mercadopago():
 
 if __name__ == "__main__":
     app.run(debug=True, port=int(os.environ.get("PORT", 5000)))
+
 

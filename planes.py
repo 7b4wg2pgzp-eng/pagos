@@ -35,6 +35,18 @@ CUOTA_MINIMA = 50_000
 MAX_CUOTAS = 7
 
 
+PAQUETES = {"nico": ("Nico Vásquez + Abrolista", 550000), "cinea": ("Nico Vásquez + Abrolista + CINÉA films", 1200000), "tiradafest": ("Nico Vásquez + Abrolista + TiradaFest", 1200000), "completa": ("Experiencia completa", 1700000)}
+
+def configuracion_paquete(paquete, conf=None):
+    if paquete not in PAQUETES:
+        raise ValueError("Elegí una experiencia válida")
+    c = dict(conf if conf is not None else montos())
+    base = PAQUETES[paquete][1]
+    c.update(presupuesto_base=base, presupuesto_financiado=base+50000,
+             presupuesto_financiado_largo=base+100000, cuotas_tramo_largo=6,
+             sena=base//2)
+    return c
+
 def montos():
     """Configuración vigente de precios y financiación."""
     return db.leer_config()
@@ -77,7 +89,7 @@ def limite_pago(fecha_evento):
     return restar_meses(fecha_evento, 1)
 
 
-def cuotas_disponibles(fecha_evento, hoy=None):
+def cuotas_disponibles(fecha_evento, hoy=None, conf=None):
     """Lista de cantidades de cuotas del saldo ofrecibles para esa fecha.
 
     Siempre incluye el 1 (contado, disponible aunque el evento sea mañana).
@@ -91,7 +103,7 @@ def cuotas_disponibles(fecha_evento, hoy=None):
     a `cuotas_tramo_largo`.
     """
     hoy = hoy or date.today()
-    conf = montos()
+    conf = conf if conf is not None else montos()
     sena, cuota_min, tope = conf["sena"], conf["cuota_minima"], conf["max_cuotas"]
     por_tiempo = meses_entre(hoy, limite_pago(fecha_evento))
 
@@ -106,7 +118,7 @@ def cuotas_disponibles(fecha_evento, hoy=None):
     return validas
 
 
-def calcular_plan(fecha_evento, cuotas_saldo, hoy=None):
+def calcular_plan(fecha_evento, cuotas_saldo, hoy=None, conf=None):
     """Plan completo: [{concepto, monto, fecha_vencimiento}, ...].
 
     `cuotas_saldo` son las cuotas del SALDO, sin contar la seña:
@@ -118,7 +130,7 @@ def calcular_plan(fecha_evento, cuotas_saldo, hoy=None):
     hoy = hoy or date.today()
     n = max(1, int(cuotas_saldo))
 
-    conf = montos()
+    conf = conf if conf is not None else montos()
     sena = conf["sena"]
     total = precio_total(n, conf)
     saldo = total - sena
@@ -143,9 +155,9 @@ def calcular_plan(fecha_evento, cuotas_saldo, hoy=None):
     return plan
 
 
-def resumen_opcion(fecha_evento, cuotas_saldo, hoy=None):
+def resumen_opcion(fecha_evento, cuotas_saldo, hoy=None, conf=None):
     """Datos de una opción, listos para mostrar en la calculadora."""
-    plan = calcular_plan(fecha_evento, cuotas_saldo, hoy)
+    plan = calcular_plan(fecha_evento, cuotas_saldo, hoy, conf)
     sena = plan[0]["monto"]
     cuotas = plan[1:]
     total = sena + sum(c["monto"] for c in cuotas)
@@ -153,7 +165,7 @@ def resumen_opcion(fecha_evento, cuotas_saldo, hoy=None):
     return {
         "cuotas_saldo": len(cuotas),
         "financiado": len(cuotas) > 1,
-        "tramo": tramo(len(cuotas)),
+        "tramo": tramo(len(cuotas), conf),
         "sena": sena,
         "saldo": total - sena,
         "monto_cuota": montos_cuotas[0],
@@ -169,3 +181,4 @@ def resumen_opcion(fecha_evento, cuotas_saldo, hoy=None):
             for c in plan
         ],
     }
+

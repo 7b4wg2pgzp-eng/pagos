@@ -396,6 +396,8 @@
   <section id="paso-datos" class="card oculto">
     <p class="eyebrow">Paso 1</p>
     <h2>Tu evento</h2>
+    <label for="in-paquete">Elegí tu experiencia</label>
+    <select id="in-paquete" style="width:100%;background:#121016;color:#f4efe4;border:1px solid rgba(217,164,65,.35);border-radius:12px;padding:12px;font-size:16px"><option value="nico">Nico Vásquez + Abrolista · $550.000</option><option value="cinea">Nico + Abrolista + CINÉA films · $1.200.000</option><option value="tiradafest">Nico + Abrolista + TiradaFest · $1.200.000</option><option value="completa">Experiencia completa · $1.700.000</option></select>
     <label for="in-fecha">Fecha del evento</label>
     <input type="date" id="in-fecha">
     <p class="hint" id="hint-montos">Las cuotas se calculan para que un mes antes de la fiesta ya esté todo abonado.</p>
@@ -429,6 +431,7 @@
 
     <p class="sub-opciones" id="sub-opciones">Elegí en cuántos pagos abonás el saldo:</p>
     <div class="opciones" id="lista-opciones"></div>
+    <p class="hint" id="total-seleccion" aria-live="polite"></p>
     <button class="btn btn-primary" id="btn-continuar" disabled>Continuar</button>
   </section>
 
@@ -504,7 +507,7 @@
 
   var elFecha=$("in-fecha"), elNombre=$("in-nombre"), elUsuario=$("in-usuario"),
       elClave=$("in-clave"), elClave2=$("in-clave2");
-  var seleccion=null, datos=null, pollTimer=null, planActual=null;
+  var seleccion=null, datos=null, pollTimer=null, planActual=null, consultaSecuencia=0;
 
   elFecha.setAttribute("min", new Date().toISOString().slice(0,10));
 
@@ -603,12 +606,14 @@
   function pedirOpciones(){
     err($("err-datos"), "");
     if(!elFecha.value){ mostrar("paso-datos"); return; }
+    var pedido=++consultaSecuencia, paquetePedido=$("in-paquete").value;
     pedir("/api/planes/opciones", {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({fecha_evento: elFecha.value})
+      body: JSON.stringify({fecha_evento: elFecha.value, paquete: paquetePedido})
     }).then(function(res){
+      if(pedido !== consultaSecuencia) return;
       if(!res.ok){ mostrar("paso-datos"); err($("err-datos"), res.data.error || "No se pudo calcular el plan."); return; }
-      datos = res.data;
+      datos = res.data; datos.paquete = paquetePedido;
       renderOpciones(datos);
       mostrar("paso-datos","paso-opciones");
     }).catch(function(){
@@ -620,6 +625,7 @@
     var cont = $("lista-opciones");
     cont.innerHTML = "";
     seleccion = null;
+    $("total-seleccion").textContent = "";
     $("btn-continuar").disabled = true;
 
     // A propósito NO se muestra ningún total (ni precio del servicio, ni suma
@@ -680,11 +686,14 @@
         limpiarSeleccion();
         div.classList.add("selected");
         seleccion = op;
+        $("total-seleccion").textContent = "Total del plan: " + montoRedondo(op.total) + " · incluye impuestos y gastos administrativos";
         $("btn-continuar").disabled = false;
       });
       cont.appendChild(div);
     });
   }
+
+  $("in-paquete").addEventListener("change", function(){ seleccion=null; $("btn-continuar").disabled=true; $("total-seleccion").textContent=""; pedirOpciones(); });
 
   // ---------- paso 2 -> 3 ----------
   $("btn-continuar").addEventListener("click", function(){
@@ -721,6 +730,7 @@
         usuario: elUsuario.value.trim(),
         clave: elClave.value,
         fecha_evento: elFecha.value,
+        paquete: datos.paquete,
         cuotas_saldo: seleccion.cuotas_saldo
       })
     }).then(function(res){
@@ -1098,4 +1108,5 @@
 </script>
 </body>
 </html>
+
 
