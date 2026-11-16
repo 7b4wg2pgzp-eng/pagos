@@ -868,8 +868,20 @@ def webhook_mercadopago():
     resultado = "sin data_id"
     if data_id and topic == "payment":
         firma_ok = mp.validar_firma(request.headers, data_id)
-        if firma_ok is False:
-            resultado = "firma invalida"
+        # Solo una firma válida sigue de largo. Sin secret o con firma
+        # inválida no se procesa el pago.
+        if firma_ok is not True:
+            if not (os.environ.get("MP_WEBHOOK_SECRET") or "").strip():
+                resultado = "MP_WEBHOOK_SECRET no configurado"
+            else:
+                resultado = "firma invalida"
+            app.logger.warning(
+                "Webhook Mercado Pago rechazado: %s (data_id=%s, x-request-id=%s). "
+                "No se procesa el pago.",
+                resultado,
+                data_id,
+                request.headers.get("x-request-id", ""),
+            )
             db.log_webhook(json.dumps({"args": dict(request.args), "body": json_body}), resultado)
             return jsonify({"status": "firma invalida"}), 401
 

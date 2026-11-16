@@ -5,11 +5,13 @@
 """
 import hashlib
 import hmac
+import logging
 import os
 import requests
 
 MP_ACCESS_TOKEN = os.environ.get("MP_ACCESS_TOKEN", "")
-MP_WEBHOOK_SECRET = os.environ.get("MP_WEBHOOK_SECRET", "")
+
+logger = logging.getLogger(__name__)
 
 API_BASE = "https://api.mercadopago.com"
 
@@ -162,15 +164,29 @@ def extraer_data_id(args, json_body):
 
 
 def validar_firma(headers, data_id):
-    """Valida el header x-signature contra MP_WEBHOOK_SECRET.
-    Devuelve True si es válida, False si no. Si no hay secret configurado
-    todavía (por ejemplo mientras probás en local), no bloquea pero lo avisa
-    devolviendo None."""
-    if not MP_WEBHOOK_SECRET:
-        return None
+    """Valida el header x-signature contra la variable MP_WEBHOOK_SECRET.
 
-    signature = headers.get("x-signature", "")
-    request_id = headers.get("x-request-id", "")
+    Mercado Pago manda `ts` y `v1` en `x-signature`. El manifest es
+    `id:<data.id>;request-id:<x-request-id>;ts:<ts>;`, firmado con HMAC-SHA256
+    en hexadecimal. La doc vigente pide pasar `data.id` a minúsculas cuando es
+    alfanumérico (un id solo numérico no cambia). La comparación es en tiempo
+    constante.
+
+    Devuelve True solo si la firma coincide. Si falta el secret, falta la firma
+    o no coincide, devuelve False: el pago no se tiene que procesar.
+    """
+    # Se lee en cada aviso. Si el secret no está, no alcanza con "seguir":
+    # cualquiera podría inventar un pago aprobado.
+    secret = os.environ.get("MP_WEBHOOK_SECRET", "") or ""
+    if not secret.strip():
+        logger.warning(
+            "Webhook Mercado Pago rechazado: MP_WEBHOOK_SECRET no está configurado. "
+            "No se procesa el pago."
+        )
+        return False
+
+    signature = headers.get("x-signature") or ""
+    request_id = headers.get("x-request-id") or ""
 
     ts = None
     v1 = None
@@ -185,11 +201,25 @@ def validar_firma(headers, data_id):
             v1 = value.strip()
 
     if not ts or not v1 or not data_id:
+        logger.warning(
+            "Webhook Mercado Pago rechazado: x-signature ausente o incompleta "
+            "(data_id=%s). No se procesa el pago.",
+            data_id,
+        )
         return False
 
+    # Mismo manifest que ya validaba una notificación bien firmada, con
+    # data.id en minúsculas (doc de Mercado Pago, noviembre 2026).
     manifest = f"id:{str(data_id).lower()};request-id:{request_id};ts:{ts};"
     expected = hmac.new(
-        MP_WEBHOOK_SECRET.encode(), manifest.encode(), hashlib.sha256
+        secret.encode(), manifest.encode(), hashlib.sha256
     ).hexdigest()
 
-    return hmac.compare_digest(expected, v1)
+    if not hmac.compare_digest(expected, v1):
+        logger.warning(
+            "Webhook Mercado Pago rechazado: la firma x-signature no coincide "
+            "(data_id=%s). No se procesa el pago.",
+            data_id,
+        )
+        return False
+    return True
