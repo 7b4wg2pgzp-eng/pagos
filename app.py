@@ -26,7 +26,28 @@ def redirect_legacy_pages():
         destino = "https://cuotas.nicovasquez.com.ar" + request.full_path
         return redirect(destino.rstrip("?") if not request.query_string else destino, code=301)
 
-app.secret_key = os.environ.get("SECRET_KEY", "cambiar-esta-clave-en-produccion")
+# La clave de ejemplo estuvo en el repo público. Si el entorno la usa, se pueden
+# firmar cookies de administrador. Sin clave, o con esa, no arrancamos.
+_CLAVE_EJEMPLO = "cambiar-esta-clave-en-produccion"
+_secret = os.environ.get("SECRET_KEY", "").strip()
+if not _secret or _secret == _CLAVE_EJEMPLO:
+    raise RuntimeError(
+        "Configurá SECRET_KEY en el entorno antes de iniciar. "
+        "No uses el valor de ejemplo que estuvo en el repositorio público."
+    )
+app.secret_key = _secret
+# Secure: el sitio en Render se ve por HTTPS. SameSite=Lax deja que la vuelta
+# desde el checkout de Mercado Pago (un GET de primer nivel) siga trayendo la sesión.
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = True
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    """Para el health check. No toca la base ni servicios externos."""
+    return jsonify(status="ok"), 200
+
 
 ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
 ADMIN_PASS = os.environ.get("ADMIN_PASS", "")
@@ -200,6 +221,27 @@ def _respuesta_plan(plan_token, incluir_token=True):
     return datos
 
 
+def _siguiente_seguro(valor):
+    """Solo una ruta relativa del mismo sitio, como /panel.
+
+    Después del login, `next` no puede mandar a otro dominio. Se rechazan
+    URLs absolutas, las que empiezan con // y las que traen esquema, barra
+    invertida o caracteres de control: el navegador a veces las trata como
+    una dirección externa.
+    """
+    if not isinstance(valor, str) or not valor:
+        return None
+    if valor != valor.strip():
+        return None
+    if any(ord(caracter) < 32 for caracter in valor):
+        return None
+    if not valor.startswith("/") or valor.startswith("//"):
+        return None
+    if "\\" in valor or ":" in valor:
+        return None
+    return valor
+
+
 # --------------------------------------------------------------------------
 # Panel de gestión (privado)
 # --------------------------------------------------------------------------
@@ -211,7 +253,7 @@ def login():
         clave = request.form.get("clave", "")
         if usuario == ADMIN_USER and clave and clave == ADMIN_PASS:
             session["logueado"] = True
-            return redirect(request.args.get("next") or url_for("dashboard"))
+            return redirect(_siguiente_seguro(request.args.get("next")) or url_for("dashboard"))
         flash("Usuario o clave incorrectos")
     return render_template("login.html")
 
@@ -961,7 +1003,28 @@ def webhook_mercadopago():
     return jsonify({"status": "ok"}), 200
 
 
+@app.after_request
+def _cabeceras_seguridad(resp):
+    """Cabeceras chicas. No hay default-src: no tocan scripts, estilos ni el checkout.
+
+    El pago con Mercado Pago es un redirect del navegador a init_point, no un
+    iframe nuestro. frame-ancestors y X-Frame-Options solo impiden que embeban
+    estas páginas. Referrer-Policy manda el origen (no la URL completa) cuando
+    el cliente sale hacia Mercado Pago.
+    """
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    csp = resp.headers.get("Content-Security-Policy", "")
+    if "frame-ancestors" not in csp.lower():
+        extra = "frame-ancestors 'none'"
+        resp.headers["Content-Security-Policy"] = f"{csp}; {extra}" if csp else extra
+    return resp
+
+
 if __name__ == "__main__":
-    app.run(debug=True, port=int(os.environ.get("PORT", 5000)))
+    # debug=False: si alguien arranca este archivo, no queda expuesto el depurador.
+    # En Render el proceso lo levanta gunicorn, que no pasa por acá.
+    app.run(host="0.0.0.0", debug=False, port=int(os.environ.get("PORT", 5000)))
 
 

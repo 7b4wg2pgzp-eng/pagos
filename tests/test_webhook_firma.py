@@ -17,6 +17,8 @@ os.environ.pop("RENDER", None)
 os.environ.pop("RENDER_SERVICE_ID", None)
 os.environ.pop("RENDER_EXTERNAL_URL", None)
 os.environ["MP_WEBHOOK_SECRET"] = "secreto-de-prueba"
+# app.py no arranca sin SECRET_KEY y rechaza la clave de ejemplo del repo.
+os.environ.setdefault("SECRET_KEY", "clave-de-prueba-para-tests")
 
 import app as app_module
 import db
