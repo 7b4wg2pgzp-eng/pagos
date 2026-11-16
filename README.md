@@ -82,7 +82,7 @@ webhook en el panel de Mercado Pago Developers.
 - Cambiá `SECRET_KEY` y `ADMIN_PASS` antes de deployar — no dejes los valores
   de ejemplo.
 - El endpoint `/webhook/mercadopago` valida la firma (`x-signature`) contra
-  `MP_WEBHOOK_SECRET`. Sin ese secret configurado, no rechaza pero no valida
-  — configuralo apenas lo tengas.
+  `MP_WEBHOOK_SECRET`. Si el secret no está, o la firma falta o no coincide,
+  responde 401 y no marca el pago. Cargá el secret antes de desplegar.
 - No expongas el `MP_ACCESS_TOKEN` en el frontend ni en el repo (por eso
   `.env` está en `.gitignore`).
